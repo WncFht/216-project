@@ -26,3 +26,5 @@ topic2_speech/data/tmp_extract_gbdz_initial/
 
 # Editor / OS
 .DS_Store
+.ace-tool/
+matlab_R2026a_Linux.zip
