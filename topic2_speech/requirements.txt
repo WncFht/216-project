@@ -1,0 +1,10 @@
+numpy
+scipy
+scikit-learn
+matplotlib
+pandas
+seaborn
+torch
+torchvision
+soundfile
+pronouncing

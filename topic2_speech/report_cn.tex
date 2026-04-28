@@ -1,0 +1,370 @@
+\documentclass[11pt,a4paper]{ctexart}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{enumitem}
+\usepackage{float}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{caption}
+
+\hypersetup{colorlinks=true,linkcolor=blue,urlcolor=blue,citecolor=blue}
+\setlength{\parskip}{0.5em}
+\setlength{\parindent}{2em}
+\captionsetup{font=small}
+
+\title{基于 MSWC English 精确首浊辅音子集的 /g/、/b/、/d/、/z/ 检测：理论、算法与案例分析\\\large VE216 Project Topic 2 重构版}
+\date{2026年4月28日}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+本文重构 VE216 Project Topic 2 的主线，不再把重点放在神经网络本身，而是放在任务定义、假设、理论分析、算法结构和定性案例上。我们把原先较松的词级多标签实验，收紧为一个更接近“首浊辅音检测”的四类任务：只保留首字母为 \texttt{g/b/d/z} 且 CMUdict 中首个非元音音素严格匹配 \texttt{G/B/D/Z} 的单词，共得到 60 个词、3000 条 16 kHz 语音。方法上，本文保留课内模板法作为主方法，并用 MLP 和 CNN 作为对照基线。结果表明，课程模板法可解释但误报高；MLP 的 exact-match 最好；CNN 的 macro-F1 最好。更重要的是，四类辅音的差异和声学事实一致：/z/ 最容易，/g/ 最难。
+\end{abstract}
+
+\section{问题定义与报告主线}
+
+\subsection{任务形式化}
+
+设输入语音为 $x_i$，目标标签为 $y_i \in \{0,1\}^4$，对应标签集合
+\[
+C=\{g,b,d,z\}.
+\]
+在当前数据集上，每个样本恰好属于四类中的一类，因此满足 $\sum_{c\in C} y_{i,c}=1$。但实现里仍保留一对多接口：先对每个标签输出分数 $s_{i,c}$，再用该标签自己的阈值 $\tau_c$ 做判定
+\[
+\hat y_{i,c} = \mathbb{1}[s_{i,c}\ge \tau_c].
+\]
+这样做的原因是：课内模板法、统计特征分类器和 CNN 输出的都不是天然校准过的概率，统一用 dev 集选阈值更公平，也更容易比较不同方法的特性。
+
+\subsection{本文的重点}
+
+这份报告只把 AI 模型当作对照基线，不把它们当成主角。主线是：
+\begin{itemize}[nosep]
+    \item 任务边界是否真的收紧到了“首浊辅音检测”；
+    \item 课内模板法到底在假设什么、怎么计算、为什么会误报；
+    \item 统计特征和时频特征为什么能比模板法更稳；
+    \item /g/、/b/、/d/、/z/ 为什么会呈现出明显不同的难度。
+\end{itemize}
+
+\input{sections/literature_review_cn.tex}
+
+\section{数据集重建与标注规则}
+
+\subsection{筛选规则}
+
+新数据集由 \path{src/prepare_mswc_initial_gbdz_subset.py} 生成，核心规则只有一条：
+\begin{quote}
+保留一个单词，当且仅当它的首字母属于 \texttt{g/b/d/z}，并且 CMUdict / ARPABET 中首个非元音音素与该字母严格对应为 \texttt{G/B/D/Z}。
+\end{quote}
+
+这条规则的意义是把“字母里出现了某个浊辅音”改成“这个浊辅音确实出现在起始位置”。这样可以自动去掉两类噪声样本：
+\begin{itemize}[nosep]
+    \item 拼写里有目标字母，但发音位置不对；
+    \item 首字母对了，但真正起始音素不是目标浊辅音。
+\end{itemize}
+
+\begin{verbatim}
+for each word w in MSWC:
+    if first letter of w not in {g,b,d,z}: discard
+    phones = CMUdict(w)
+    p = first non-vowel phone in phones
+    if p == first letter(w).upper():
+        keep w
+    else:
+        discard
+\end{verbatim}
+
+\subsection{数据规模}
+
+最终实验规模如下：
+\begin{table}[H]
+    \centering
+    \caption{精确首浊辅音子集的规模统计}
+    \label{tab:dataset}
+    \begin{tabular}{lcccc}
+        \toprule
+        标签 & 词数 & train & dev & test \\
+        \midrule
+        /g/ & 15 & 600 & 75 & 75 \\
+        /b/ & 15 & 600 & 75 & 75 \\
+        /d/ & 15 & 600 & 75 & 75 \\
+        /z/ & 15 & 600 & 75 & 75 \\
+        \midrule
+        合计 & 60 & 2400 & 300 & 300 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+也就是说，这版数据是四类完全平衡的：总样本数 3000，测试集每类正样本 75 条。这个设定比旧版 600 词、多标签、\texttt{/b/\,/d/\,/l/\,/n/} 的版本更贴近题目，也更适合做案例分析。
+
+\section{理论背景与方法}
+
+\subsection{短时表示、filter bank 与模板相似度}
+
+对 1 秒左右的短语音，最重要的不是绝对波形，而是局部时频能量结构。本文采用的前端是标准短时分析：
+\begin{itemize}[nosep]
+    \item 采样率统一到 16 kHz；
+    \item 帧长 25 ms，帧移 10 ms；
+    \item FFT 长度 512；
+    \item 40 维 log-mel filter bank 作为主表示。
+\end{itemize}
+
+记某个样本的 log-mel 图为 $S_i \in \mathbb{R}^{T\times M}$，其中 $M=40$。再定义时间包络
+\[
+a_i(t)=\frac{1}{M}\sum_{m=1}^{M} S_i(t,m),
+\]
+以及某个类别 $c$ 的训练集正样本均值模板
+\[
+T_c=\frac{1}{N_c}\sum_{i:y_{i,c}=1} S_i,\qquad
+A_c=\frac{1}{N_c}\sum_{i:y_{i,c}=1} a_i.
+\]
+
+课内模板法的分数由两部分组成：
+\[
+s^{\text{spec}}_{i,c}=\max_{\tau}\rho\!\left(S_i,T_c;\tau\right),\qquad
+s^{\text{auto}}_{i,c}=\frac{\langle a_i,A_c\rangle}{\|a_i\|_2\,\|A_c\|_2},
+\]
+其中 $\rho(\cdot)$ 表示归一化互相关，$\tau$ 是时间平移。最终总分是
+\[
+s_{i,c}=0.65\,s^{\text{spec}}_{i,c}+0.35\,s^{\text{auto}}_{i,c}.
+\]
+
+这套设计的假设很明确：同一类词在首辅音附近会共享相似的时频模板，而时间包络的周期性和持续性也有类别信息。它的优点是解释性强；缺点是只要模板在多个类之间都相似，就很容易一起抬高，导致误报。
+
+\subsection{算法 1：课程模板法}
+
+\begin{verbatim}
+Algorithm 1 课程模板法
+Input: train/dev/test waveforms, labels C={g,b,d,z}
+Output: per-label predictions on test
+
+for each class c in C do
+    build mean log-mel template T_c from train positives
+    build mean envelope autocorr template A_c from train positives
+end for
+
+for each dev sample i do
+    for each class c in C do
+        s_ic = 0.65 * max_correlation(S_i, T_c)
+             + 0.35 * cosine(a_i, A_c)
+    end for
+    choose tau_c that maximizes F1 on dev
+end for
+
+for each test sample i do
+    predict y_ic = 1[s_ic >= tau_c]
+end for
+\end{verbatim}
+
+这个方法本质上是“均值模板 + 阈值判别”。它不是学习一个复杂边界，而是在问：当前样本和某个类别的典型声学形态像不像。正因为如此，它适合作为主方法的可解释基线。
+
+\subsection{算法 2：统计特征 MLP 基线}
+
+MLP 不是主角，只是一个强一点的统计基线。它的输入不是原始波形，而是手工汇总后的 62 维统计特征：
+\begin{itemize}[nosep]
+    \item 13 维 MFCC 的均值和标准差；
+    \item MFCC 一阶差分的均值和标准差；
+    \item 10 个 coarse band-energy 特征。
+\end{itemize}
+
+模型结构是 \texttt{StandardScaler -> MLPClassifier(128, 64)}，用 early stopping 训练。和模板法相比，它不再依赖显式模板对齐，而是直接学习这些统计特征之间的组合关系。因为当前数据是单标签四分类，但阈值仍按 label 单独选，所以 MLP 的 exact-match 往往会比 label-wise accuracy 更能反映它是否“少乱报”。
+
+\subsection{算法 3：CNN 对照基线}
+
+CNN 只作为更强的对照上界。输入是整词 log-mel spectrogram，网络是 3 个卷积块加自适应池化，再接一层小型全连接头。训练时使用带 \texttt{pos\_weight} 的 \texttt{BCEWithLogitsLoss}，并按 dev macro-F1 早停回退到最佳 epoch。
+
+最终采用的调参配置是：
+\[
+\texttt{epochs}=35,\quad
+\texttt{batch}=96,\quad
+\texttt{lr}=6\times 10^{-4},\quad
+\texttt{weight\_decay}=10^{-4},\quad
+\texttt{patience}=8.
+\]
+它的作用只是提供一个“模型能学到多少局部时频模式”的参照，不影响本文的主要论证。
+
+\section{定性案例分析}
+
+\subsection{代表性样本}
+
+图~\ref{fig:examples} 给出了四个代表词的波形和 spectrogram，图~\ref{fig:template} 给出了四类在训练集正样本上的平均 log-mel 模板。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\textwidth]{figures/mswc_course_gbdz_initial_tuned_b/letter_examples.png}
+    \caption{四个目标浊辅音的代表性样本：\texttt{get}、\texttt{boy}、\texttt{did}、\texttt{zero}。}
+    \label{fig:examples}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.90\textwidth]{figures/mswc_course_gbdz_initial_tuned_b/template_grid.png}
+    \caption{四个目标浊辅音在训练集正样本上的平均 log-mel 模板。}
+    \label{fig:template}
+\end{figure}
+
+从图上能直接看出：/g/、/b/、/d/ 的关键差异主要集中在起始几十毫秒的短时爆破和过渡；/z/ 则有更长、更明显的高频摩擦能量。也因此，/z/ 的模板最稳定，/g/ 的模板最难。
+
+\subsection{四个样本的预测行为}
+
+\begin{table}[H]
+    \centering
+    \small
+    \caption{四个代表词的预测行为与声学解释}
+    \label{tab:cases}
+    \begin{tabularx}{\textwidth}{l l l l l X}
+        \toprule
+        词 & 真值 & 课程模板法 & MLP & CNN & 解释 \\
+        \midrule
+        get & g & g b d z & g & b & /g/ 爆破短，模板法容易把其它 stop 一起抬高；CNN 仍会和 /b/ 混淆。 \\
+        boy & b & g b d z & b & b & /b/ 的低频起始和元音过渡更清楚，统计特征和 CNN 都能抓住。 \\
+        did & d & b d z & d & g b & /d/ 有可见过渡，但阈值校准仍会让 CNN 多报。 \\
+        zero & z & g b d z & z & z & /z/ 的持续摩擦最稳定，三种方法都最容易。 \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+这个表最关键的结论不是“谁赢了”，而是错误模式很一致：
+\begin{itemize}[nosep]
+    \item 课程模板法偏召回，容易把多个标签同时判正，所以 exact-match 很差；
+    \item MLP 的统计特征最稳，通常能给出更干净的单标签输出；
+    \item CNN 的逐标签区分更强，但在短促 stop 上仍会出现阈值边界偏松的问题。
+\end{itemize}
+
+\section{实验结果与比较}
+
+\subsection{总体结果}
+
+表~\ref{tab:summary} 是最终采用的 \texttt{tuned\_b} 结果。这里最重要的结构是：课程模板法明显落后；MLP 和 CNN 明显更强；CNN 的 macro-F1 最好，但 MLP 的 exact-match 仍然更高。
+
+\begin{table}[H]
+    \centering
+    \caption{最终结果对比}
+    \label{tab:summary}
+    \begin{tabular}{lccccc}
+        \toprule
+        方法 & label-wise acc. & exact-match acc. & macro-F1 & micro-F1 & samples-F1 \\
+        \midrule
+        课程模板法 & 0.3525 & 0.0000 & 0.3916 & 0.3925 & 0.3856 \\
+        MLP & \textbf{0.7558} & \textbf{0.4100} & 0.5658 & 0.5646 & 0.5589 \\
+        CNN & 0.7567 & 0.3567 & \textbf{0.5823} & \textbf{0.5718} & 0.5483 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth]{figures/mswc_course_gbdz_initial_tuned_b/metric_summary.png}
+    \caption{总体指标比较。}
+    \label{fig:metric-summary}
+\end{figure}
+
+这里的一个关键现象是：MLP 的 exact-match 更高，但 CNN 的 macro-F1 更高。这个差异说明 CNN 更敢把局部声学线索判出来，MLP 则更保守、更少同时报多个标签。对于当前这种“单词级四分类”设置，exact-match 比 label-wise accuracy 更能暴露阈值校准问题。
+
+\subsection{分标签结果}
+
+\begin{table}[H]
+    \centering
+    \caption{四个标签的 F1}
+    \label{tab:per-label}
+    \begin{tabular}{lcccc}
+        \toprule
+        方法 & /g/ & /b/ & /d/ & /z/ \\
+        \midrule
+        课程模板法 & 0.403 & 0.403 & 0.400 & 0.360 \\
+        MLP & 0.490 & 0.533 & 0.524 & 0.717 \\
+        CNN & 0.443 & \textbf{0.610} & 0.532 & \textbf{0.745} \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.90\textwidth]{figures/mswc_course_gbdz_initial_tuned_b/per_label_f1.png}
+    \caption{分标签 F1 对比。}
+    \label{fig:per-label-f1}
+\end{figure}
+
+这个表对应的解释也很清楚：
+\begin{itemize}[nosep]
+    \item \textbf{/g/ 最难。} 它的释放短、局部、容易被 25 ms 窗口抹平，因此三种方法都不占便宜。
+    \item \textbf{/b/ 改善最明显。} 低频起始和过渡对 CNN 很友好，所以 CNN 在 /b/ 上涨得最明显。
+    \item \textbf{/d/ 居中。} 它有可见过渡，但不如 /z/ 那么长，也不如 /g/ 那么短得极端。
+    \item \textbf{/z/ 最容易。} 持续摩擦噪声提供了最稳定的时频证据，因此 MLP 和 CNN 都能把它分得很好。
+\end{itemize}
+
+\section{讨论与局限}
+
+这次重构最重要的收益，不是某个分数上升了，而是任务边界终于变清楚了。旧版更像“词里有没有出现某个浊辅音”，新版则更接近“词首这个浊辅音能不能被检出”。一旦把这个条件收紧，报告里的理论解释就顺了：
+\begin{itemize}[nosep]
+    \item 课内模板法是可解释的，但它更像召回器，容易把相似的 stop 一起判正；
+    \item MLP 的统计特征压缩了整词声学形态，因此 exact-match 最稳；
+    \item CNN 直接看局部时频图，所以在 /b/ 和 /z/ 上更强，但对 /g/ 这种极短 cue 仍不稳定。
+\end{itemize}
+
+不过这份报告仍然有三个局限需要明确写出：
+\begin{enumerate}[nosep]
+    \item 它仍然是整词级特征，不是人工切出来的 phone segment；
+    \item /z/ 的词数比较紧，整个平衡子集的规模被它卡住了；
+    \item 调参只做了轻量 sweep，AI 模型只是对照基线，不是全文核心。
+\end{enumerate}
+
+如果后续继续推进，最合理的方向不是再加更大的网络，而是做真正的 phone-level 对齐，或者在现有 MSWC 上做更精细的首辅音裁剪。
+
+\section{结论}
+
+本文完成了 Topic 2 的一次重新组织，核心结论如下：
+\begin{itemize}[nosep]
+    \item 通过“首字母与首个非元音音素严格对应”的规则，新数据集把任务收紧到了首浊辅音检测；
+    \item 课内模板法、MLP、CNN 的 macro-F1 分别为 0.392、0.566、0.582，说明手工模板仍有解释价值，但性能明显弱于更强的统计和卷积基线；
+    \item CNN 在逐标签判别上最好，MLP 在 exact-match 上最好；
+    \item /z/ 最容易、/g/ 最难，这和声学图里的持续摩擦与短促爆破完全一致；
+    \item 这份报告的重点已经从“跑一个神经网络”转成“解释为什么这些辅音会这样表现”。
+\end{itemize}
+
+\begin{thebibliography}{99}
+\bibitem{davis1980}
+S. Davis and P. Mermelstein, ``Comparison of Parametric Representations for Monosyllabic Word Recognition in Continuously Spoken Sentences,'' \textit{IEEE Transactions on Acoustics, Speech, and Signal Processing}, 1980. \url{https://doi.org/10.1109/TASSP.1980.1163420}.
+
+\bibitem{rabiner1989}
+L. R. Rabiner, ``A Tutorial on Hidden Markov Models and Selected Applications in Speech Recognition,'' \textit{Proceedings of the IEEE}, 1989. \url{https://doi.org/10.1109/5.18626}.
+
+\bibitem{wilkinson2002}
+N. J. Wilkinson and M. J. Russell, ``Improved Phone Recognition on TIMIT Using Formant Frequency Data and Confidence Measures,'' in \textit{Proc. ICSLP 2002}. \url{https://www.isca-archive.org/icslp_2002/wilkinson02_icslp.html}.
+
+\bibitem{chen2014kws}
+G. Chen, C. Parada, and G. Heigold, ``Small-Footprint Keyword Spotting using Deep Neural Networks,'' in \textit{Proc. ICASSP 2014}. \url{https://research.google/pubs/small-footprint-keyword-spotting-using-deep-neural-networks/}.
+
+\bibitem{sainath2015}
+T. N. Sainath and C. Parada, ``Convolutional Neural Networks for Small-Footprint Keyword Spotting,'' in \textit{Proc. Interspeech 2015}. \url{https://research.google/pubs/convolutional-neural-networks-for-small-footprint-keyword-spotting/}.
+
+\bibitem{arik2017}
+S. O. Arik \textit{et al.}, ``Convolutional Recurrent Neural Networks for Small-Footprint Keyword Spotting,'' in \textit{Proc. Interspeech 2017}.
+
+\bibitem{warden2018}
+P. Warden, ``Speech Commands: A Dataset for Limited-Vocabulary Speech Recognition,'' arXiv:1804.03209, 2018. \url{https://doi.org/10.48550/arXiv.1804.03209}.
+
+\bibitem{berg2021}
+M. Berg \textit{et al.}, ``Keyword Transformer: A Self-Attention Model for Keyword Spotting,'' arXiv:2104.00769, 2021.
+
+\bibitem{baevski2020}
+A. Baevski \textit{et al.}, ``wav2vec 2.0: A Framework for Self-Supervised Learning of Speech Representations,'' arXiv:2006.11477, 2020. \url{https://doi.org/10.48550/arXiv.2006.11477}.
+
+\bibitem{hsu2021hubert}
+W.-N. Hsu \textit{et al.}, ``HuBERT: Self-Supervised Speech Representation Learning by Masked Prediction of Hidden Units,'' arXiv:2106.07447, 2021.
+
+\bibitem{chen2022wavlm}
+S. Chen \textit{et al.}, ``WavLM: Large-Scale Self-Supervised Pre-Training for Full Stack Speech Processing,'' \textit{IEEE Journal of Selected Topics in Signal Processing}, 2022. \url{https://arxiv.org/abs/2110.13900}.
+
+\bibitem{gao2023}
+C. Gao \textit{et al.}, ``Self-Supervised Speech Representation Learning for Keyword-Spotting with Light-Weight Transformers,'' arXiv:2303.04255, 2023. \url{https://arxiv.org/abs/2303.04255}.
+
+\bibitem{kim2025}
+D. Kim and J. Hwang, ``Fully End-to-end Streaming Open-vocabulary Keyword Spotting with W-CTC Forced Alignment,'' in \textit{Proc. Interspeech 2025}. \url{https://www.isca-archive.org/interspeech_2025/kim25d_interspeech.html}.
+\end{thebibliography}
+
+\end{document}
