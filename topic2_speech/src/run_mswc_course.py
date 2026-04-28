@@ -35,18 +35,22 @@ else:
     TORCH_IMPORT_ERROR = None
 
 RNG = 216
-DEFAULT_LABELS = ["b", "d", "l", "n"]
+DEFAULT_LABELS = ["g", "b", "d", "z"]
 DEFAULT_EXAMPLE_WORDS = {
     "g": "get",
     "b": "boy",
     "d": "did",
     "z": "zero",
-    "l": "like",
-    "n": "new",
 }
 BAND_EDGES = np.array([0, 250, 500, 750, 1000, 1500, 2000, 3000, 4000, 5500, 8000], dtype=float)
 FILTERBANK_MELS = 40
-COURSE_AUTOCORR_LAGS = 32
+COURSE_AUTOCORR_LAGS = 24
+COURSE_WINDOW_FRAMES = 16
+COURSE_PRE_FRAMES = 2
+COURSE_SEGMENTS = 3
+COURSE_ENERGY_SMOOTH_FRAMES = 5
+COURSE_ONSET_MARGIN = 0.22
+COURSE_CANDIDATE_SHIFTS = (-2, 0, 2)
 COURSE_CROSS_WEIGHT = 0.65
 COURSE_AUTOCORR_WEIGHT = 0.35
 
@@ -196,6 +200,91 @@ def normalized_autocorrelation(x: np.ndarray, n_lags: int) -> np.ndarray:
     return values.astype(np.float32)
 
 
+def moving_average_1d(x: np.ndarray, width: int) -> np.ndarray:
+    x = np.asarray(x, dtype=np.float32)
+    if width <= 1 or len(x) == 0:
+        return x.astype(np.float32)
+    width = int(max(1, width))
+    kernel = np.ones(width, dtype=np.float32) / float(width)
+    pad_left = width // 2
+    pad_right = width - 1 - pad_left
+    padded = np.pad(x, (pad_left, pad_right), mode="edge")
+    return np.convolve(padded, kernel, mode="valid").astype(np.float32)
+
+
+def pad_or_trim_rows(x: np.ndarray, start: int, length: int) -> np.ndarray:
+    x = np.asarray(x, dtype=np.float32)
+    if x.ndim != 2:
+        raise ValueError(f"Expected a 2D array, got shape {x.shape}")
+    n_rows, n_cols = x.shape
+    if n_rows == 0:
+        return np.zeros((length, n_cols), dtype=np.float32)
+    end = start + length
+    left = max(0, -start)
+    right = max(0, end - n_rows)
+    s = max(0, start)
+    e = min(n_rows, end)
+    out = x[s:e]
+    if left or right:
+        out = np.pad(out, ((left, right), (0, 0)), mode="edge")
+    if out.shape[0] != length:
+        if out.shape[0] > length:
+            out = out[:length]
+        else:
+            out = np.pad(out, ((0, length - out.shape[0]), (0, 0)), mode="edge")
+    return out.astype(np.float32)
+
+
+def frame_energy_from_logmel(logmel: np.ndarray) -> np.ndarray:
+    logmel = np.asarray(logmel, dtype=np.float32)
+    return np.log(np.mean(np.exp(logmel), axis=1) + 1e-12).astype(np.float32)
+
+
+def segment_mean_spectrum(patch: np.ndarray, segments: int = COURSE_SEGMENTS) -> np.ndarray:
+    patch = np.asarray(patch, dtype=np.float32)
+    parts = np.array_split(patch, int(max(1, segments)), axis=0)
+    return np.concatenate([part.mean(axis=0) for part in parts], axis=0).astype(np.float32)
+
+
+def detect_course_onset(logmel: np.ndarray) -> int:
+    energy = frame_energy_from_logmel(logmel)
+    smoothed = moving_average_1d(energy, COURSE_ENERGY_SMOOTH_FRAMES)
+    head = smoothed[: min(len(smoothed), max(6, COURSE_ENERGY_SMOOTH_FRAMES * 2))]
+    baseline = float(np.median(head)) if len(head) else float(np.median(smoothed))
+    cutoff = baseline + COURSE_ONSET_MARGIN
+    hits = np.flatnonzero(smoothed >= cutoff)
+    if len(hits) > 0:
+        return int(hits[0])
+    return int(np.argmax(smoothed))
+
+
+def extract_course_patch(logmel: np.ndarray, onset_idx: int, shift: int = 0):
+    start = onset_idx - COURSE_PRE_FRAMES + int(shift)
+    patch = pad_or_trim_rows(logmel, start, COURSE_WINDOW_FRAMES)
+    if COURSE_PRE_FRAMES > 0:
+        baseline = patch[:COURSE_PRE_FRAMES].mean(axis=0, keepdims=True)
+    else:
+        baseline = patch[:1].mean(axis=0, keepdims=True)
+    centered_patch = patch - baseline
+    envelope = frame_energy_from_logmel(patch)
+    raw_segment = segment_mean_spectrum(patch, COURSE_SEGMENTS)
+    centered_segment = segment_mean_spectrum(centered_patch, COURSE_SEGMENTS)
+    patch_vec = np.concatenate([raw_segment, centered_segment], axis=0).astype(np.float32)
+    patch_auto = normalized_autocorrelation(envelope, COURSE_AUTOCORR_LAGS)
+    return patch_vec, patch_auto
+
+
+def extract_course_candidates(logmel: np.ndarray):
+    onset_idx = detect_course_onset(logmel)
+    patch_rows = []
+    auto_rows = []
+    for shift in COURSE_CANDIDATE_SHIFTS:
+        patch_vec, patch_auto = extract_course_patch(logmel, onset_idx, shift=shift)
+        patch_rows.append(patch_vec)
+        auto_rows.append(patch_auto)
+    return np.vstack(patch_rows), np.vstack(auto_rows)
+
+
 def compute_representations(x: np.ndarray, sr: int):
     frames = frame_signal(x, sr)
     n_fft = 512
@@ -306,27 +395,58 @@ def cosine_similarity_rows(X: np.ndarray, template: np.ndarray) -> np.ndarray:
     return ((X @ template) / denom).astype(np.float32)
 
 
-def fit_course_detector(X_spec_train: np.ndarray, X_auto_train: np.ndarray, Y_train: np.ndarray):
-    spectrum_templates = []
-    autocorr_templates = []
+def fit_course_detector(X_logmel_train: np.ndarray, Y_train: np.ndarray):
+    sample_patch_features = []
+    sample_autocorr_features = []
+    for logmel in X_logmel_train:
+        patch_vec, patch_auto = extract_course_patch(logmel, detect_course_onset(logmel), shift=0)
+        sample_patch_features.append(patch_vec)
+        sample_autocorr_features.append(patch_auto)
+    sample_patch_features = np.vstack(sample_patch_features)
+    sample_autocorr_features = np.vstack(sample_autocorr_features)
+
+    patch_pos_templates = []
+    patch_neg_templates = []
+    autocorr_pos_templates = []
+    autocorr_neg_templates = []
     for j in range(Y_train.shape[1]):
         pos = Y_train[:, j] == 1
-        spectrum_templates.append(X_spec_train[pos].mean(axis=0).astype(np.float32))
-        autocorr_templates.append(X_auto_train[pos].mean(axis=0).astype(np.float32))
-    return np.vstack(spectrum_templates), np.vstack(autocorr_templates)
+        neg = ~pos
+        if not np.any(pos):
+            raise ValueError(f"No positive training samples found for label index {j}")
+        if not np.any(neg):
+            raise ValueError(f"No negative training samples found for label index {j}")
+        patch_pos_templates.append(np.mean(sample_patch_features[pos], axis=0).astype(np.float32))
+        patch_neg_templates.append(np.mean(sample_patch_features[neg], axis=0).astype(np.float32))
+        autocorr_pos_templates.append(np.mean(sample_autocorr_features[pos], axis=0).astype(np.float32))
+        autocorr_neg_templates.append(np.mean(sample_autocorr_features[neg], axis=0).astype(np.float32))
+    return (
+        np.vstack(patch_pos_templates),
+        np.vstack(patch_neg_templates),
+        np.vstack(autocorr_pos_templates),
+        np.vstack(autocorr_neg_templates),
+    )
 
 
 def score_course_detector(
-    X_spec: np.ndarray,
-    X_auto: np.ndarray,
-    spectrum_templates: np.ndarray,
-    autocorr_templates: np.ndarray,
+    X_logmel: np.ndarray,
+    patch_pos_templates: np.ndarray,
+    patch_neg_templates: np.ndarray,
+    autocorr_pos_templates: np.ndarray,
+    autocorr_neg_templates: np.ndarray,
 ) -> np.ndarray:
-    scores = np.zeros((len(X_spec), spectrum_templates.shape[0]), dtype=np.float32)
-    for j in range(spectrum_templates.shape[0]):
-        cross_scores = max_normalized_cross_correlation_rows(X_spec, spectrum_templates[j])
-        autocorr_scores = cosine_similarity_rows(X_auto, autocorr_templates[j])
-        scores[:, j] = COURSE_CROSS_WEIGHT * cross_scores + COURSE_AUTOCORR_WEIGHT * autocorr_scores
+    scores = np.zeros((len(X_logmel), patch_pos_templates.shape[0]), dtype=np.float32)
+    for i, logmel in enumerate(X_logmel):
+        patch_rows, auto_rows = extract_course_candidates(logmel)
+        for j in range(patch_pos_templates.shape[0]):
+            patch_pos_scores = cosine_similarity_rows(patch_rows, patch_pos_templates[j])
+            patch_neg_scores = cosine_similarity_rows(patch_rows, patch_neg_templates[j])
+            auto_pos_scores = cosine_similarity_rows(auto_rows, autocorr_pos_templates[j])
+            auto_neg_scores = cosine_similarity_rows(auto_rows, autocorr_neg_templates[j])
+            candidate_scores = COURSE_CROSS_WEIGHT * (patch_pos_scores - patch_neg_scores) + COURSE_AUTOCORR_WEIGHT * (
+                auto_pos_scores - auto_neg_scores
+            )
+            scores[i, j] = float(np.max(candidate_scores))
     return scores
 
 
@@ -362,7 +482,12 @@ def fit_thresholds(y_dev: np.ndarray, scores_dev: np.ndarray) -> np.ndarray:
     return np.asarray([choose_threshold(y_dev[:, j].astype(int), scores_dev[:, j]) for j in range(y_dev.shape[1])], dtype=np.float32)
 
 
-def predict_with_thresholds(scores: np.ndarray, thresholds: np.ndarray) -> np.ndarray:
+def predict_with_thresholds(scores: np.ndarray, thresholds: np.ndarray, exclusive: bool = False) -> np.ndarray:
+    scores = np.asarray(scores)
+    if exclusive:
+        pred = np.zeros_like(scores, dtype=int)
+        pred[np.arange(len(scores)), np.argmax(scores, axis=1)] = 1
+        return pred
     return (scores >= thresholds[None, :]).astype(int)
 
 
@@ -668,9 +793,13 @@ def write_markdown_report(
 def export_course_template_bank(
     path: Path,
     labels: Sequence[str],
-    spectrum_templates: np.ndarray,
-    autocorr_templates: np.ndarray,
+    patch_pos_templates: np.ndarray,
+    patch_neg_templates: np.ndarray,
+    autocorr_pos_templates: np.ndarray,
+    autocorr_neg_templates: np.ndarray,
     thresholds: np.ndarray,
+    *,
+    exclusive_decode: bool,
 ):
     bank = {
         "labels": list(labels),
@@ -678,11 +807,23 @@ def export_course_template_bank(
         "frame_ms": 25,
         "hop_ms": 10,
         "n_mels": FILTERBANK_MELS,
+        "window_frames": COURSE_WINDOW_FRAMES,
+        "pre_frames": COURSE_PRE_FRAMES,
+        "segment_count": COURSE_SEGMENTS,
+        "energy_smooth_frames": COURSE_ENERGY_SMOOTH_FRAMES,
+        "onset_margin": COURSE_ONSET_MARGIN,
+        "candidate_shifts": list(COURSE_CANDIDATE_SHIFTS),
         "autocorr_lags": COURSE_AUTOCORR_LAGS,
         "cross_correlation_weight": COURSE_CROSS_WEIGHT,
         "autocorrelation_weight": COURSE_AUTOCORR_WEIGHT,
-        "spectrum_templates": spectrum_templates.astype(float).tolist(),
-        "autocorr_templates": autocorr_templates.astype(float).tolist(),
+        "exclusive_decode": bool(exclusive_decode),
+        "patch_pos_templates": patch_pos_templates.astype(float).tolist(),
+        "patch_neg_templates": patch_neg_templates.astype(float).tolist(),
+        "autocorr_pos_templates": autocorr_pos_templates.astype(float).tolist(),
+        "autocorr_neg_templates": autocorr_neg_templates.astype(float).tolist(),
+        "patch_templates": patch_pos_templates.astype(float).tolist(),
+        "spectrum_templates": patch_pos_templates.astype(float).tolist(),
+        "autocorr_templates": autocorr_pos_templates.astype(float).tolist(),
         "thresholds": thresholds.astype(float).tolist(),
     }
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -716,21 +857,31 @@ def main() -> int:
     dev_idx = np.where(splits == "dev")[0]
     test_idx = np.where(splits == "test")[0]
 
-    X_course_spec_tr = data["X_course_spec"][train_idx]
-    X_course_spec_dev = data["X_course_spec"][dev_idx]
-    X_course_spec_te = data["X_course_spec"][test_idx]
-    X_course_auto_tr = data["X_course_auto"][train_idx]
-    X_course_auto_dev = data["X_course_auto"][dev_idx]
-    X_course_auto_te = data["X_course_auto"][test_idx]
+    X_course_tr = data["X_cnn"][train_idx]
+    X_course_dev = data["X_cnn"][dev_idx]
+    X_course_te = data["X_cnn"][test_idx]
     X_stat_tr, X_stat_dev, X_stat_te = data["X_stat"][train_idx], data["X_stat"][dev_idx], data["X_stat"][test_idx]
     X_cnn_tr, X_cnn_dev, X_cnn_te = data["X_cnn"][train_idx], data["X_cnn"][dev_idx], data["X_cnn"][test_idx]
     Y_tr, Y_dev, Y_te = Y[train_idx], Y[dev_idx], Y[test_idx]
+    exclusive_decode = bool(np.all(Y.sum(axis=1) == 1))
 
-    spectrum_templates, autocorr_templates = fit_course_detector(X_course_spec_tr, X_course_auto_tr, Y_tr)
-    course_dev_scores = score_course_detector(X_course_spec_dev, X_course_auto_dev, spectrum_templates, autocorr_templates)
+    patch_pos_templates, patch_neg_templates, autocorr_pos_templates, autocorr_neg_templates = fit_course_detector(X_course_tr, Y_tr)
+    course_dev_scores = score_course_detector(
+        X_course_dev,
+        patch_pos_templates,
+        patch_neg_templates,
+        autocorr_pos_templates,
+        autocorr_neg_templates,
+    )
     course_thresholds = fit_thresholds(Y_dev, course_dev_scores)
-    course_te_scores = score_course_detector(X_course_spec_te, X_course_auto_te, spectrum_templates, autocorr_templates)
-    course_te_pred = predict_with_thresholds(course_te_scores, course_thresholds)
+    course_te_scores = score_course_detector(
+        X_course_te,
+        patch_pos_templates,
+        patch_neg_templates,
+        autocorr_pos_templates,
+        autocorr_neg_templates,
+    )
+    course_te_pred = predict_with_thresholds(course_te_scores, course_thresholds, exclusive=exclusive_decode)
 
     method_preds = {
         "course_filterbank_corr": course_te_pred,
@@ -742,7 +893,7 @@ def main() -> int:
         "label": list(args.labels),
         "course_threshold": course_thresholds,
     }
-    method_desc_parts = ["course filter-bank spectrum + autocorrelation threshold baseline"]
+    method_desc_parts = ["course local-window contrastive template + autocorrelation detector"]
     cnn_summary = None
 
     if not args.course_only:
@@ -750,7 +901,7 @@ def main() -> int:
         mlp_dev_scores = get_mlp_scores(mlp_model, X_stat_dev)
         mlp_thresholds = fit_thresholds(Y_dev, mlp_dev_scores)
         mlp_te_scores = get_mlp_scores(mlp_model, X_stat_te)
-        mlp_te_pred = predict_with_thresholds(mlp_te_scores, mlp_thresholds)
+        mlp_te_pred = predict_with_thresholds(mlp_te_scores, mlp_thresholds, exclusive=exclusive_decode)
         method_preds["mlp_ai"] = mlp_te_pred
         method_scores["mlp_ai"] = mlp_te_scores
         threshold_table["mlp_threshold"] = mlp_thresholds
@@ -777,7 +928,7 @@ def main() -> int:
             )
             cnn_thresholds = fit_thresholds(Y_dev, cnn_dev_scores)
             cnn_te_scores = cnn_predict_scores(cnn_model, X_cnn_te, cnn_mean, cnn_std, device=device)
-            cnn_te_pred = predict_with_thresholds(cnn_te_scores, cnn_thresholds)
+            cnn_te_pred = predict_with_thresholds(cnn_te_scores, cnn_thresholds, exclusive=exclusive_decode)
             method_preds["cnn_ai"] = cnn_te_pred
             method_scores["cnn_ai"] = cnn_te_scores
             threshold_table["cnn_threshold"] = cnn_thresholds
@@ -838,7 +989,15 @@ def main() -> int:
             "autocorr_lags": COURSE_AUTOCORR_LAGS,
             "cross_correlation_weight": COURSE_CROSS_WEIGHT,
             "autocorrelation_weight": COURSE_AUTOCORR_WEIGHT,
+            "window_frames": COURSE_WINDOW_FRAMES,
+            "pre_frames": COURSE_PRE_FRAMES,
+            "segment_count": COURSE_SEGMENTS,
+            "energy_smooth_frames": COURSE_ENERGY_SMOOTH_FRAMES,
+            "onset_margin": COURSE_ONSET_MARGIN,
+            "candidate_shifts": list(COURSE_CANDIDATE_SHIFTS),
+            "exclusive_decode": exclusive_decode,
         },
+        "decode_mode": "exclusive" if exclusive_decode else "threshold",
         "methods": summary_rows,
         "cnn": cnn_summary,
     }
@@ -847,7 +1006,16 @@ def main() -> int:
     metrics_df.to_csv(args.out_dir / "per_label_metrics.csv", index=False)
     example_df.to_csv(args.out_dir / "example_predictions.csv", index=False)
     pd.DataFrame(threshold_table).to_csv(args.out_dir / "thresholds.csv", index=False)
-    export_course_template_bank(args.out_dir / "course_template_bank.json", args.labels, spectrum_templates, autocorr_templates, course_thresholds)
+    export_course_template_bank(
+        args.out_dir / "course_template_bank.json",
+        args.labels,
+        patch_pos_templates,
+        patch_neg_templates,
+        autocorr_pos_templates,
+        autocorr_neg_templates,
+        course_thresholds,
+        exclusive_decode=exclusive_decode,
+    )
     command_lines = [
         "cd 216/project/topic2_speech",
         ".venv/bin/python src/run_mswc_course.py \\",
