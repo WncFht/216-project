@@ -4,7 +4,7 @@
 \[
 C=\{g,b,d,z\}, \qquad y_i\in\{0,1\}^{|C|}.
 \]
-当前数据集是单标签四分类，每个样本只有一个首浊辅音标签。代码保留一对多接口，是为了让模板法、MLP 和 CNN 用同一套输出格式：每个方法先给出分数向量 $s_i\in\mathbb{R}^{|C|}$，再解码成预测标签 $\hat y_i$。由于当前样本都满足 $\sum_c y_{i,c}=1$，正式评测时使用 exclusive decoding，也就是
+本实验是单标签四分类任务，每个样本只有一个首浊辅音标签。为了让模板法、MLP 和 CNN 共用同一套评测流程，程序先为每个方法输出分数向量 $s_i\in\mathbb{R}^{|C|}$，再解码成预测标签 $\hat y_i$。由于所有样本都满足 $\sum_c y_{i,c}=1$，正式评测时使用 exclusive decoding，也就是
 \[
 \hat c_i=\arg\max_{c\in C}s_{i,c},\qquad
 \hat y_{i,c}=\mathbf{1}[c=\hat c_i].
@@ -54,4 +54,4 @@ samples-F1 则先在每条样本上算 F1，再对样本取平均：
 \]
 因为本文的真实标签和预测标签都恰好选一个类别，micro-F1、samples-F1 和 exact-match 会给出相同数值。报告仍保留这几个指标，是为了和代码的一对多评测接口一致。
 
-这份报告的顺序是固定的。先讲严格课内版，因为它最接近课堂工具，也最适合说明题目本身；再讲 AI 重做版，因为它用更强的频谱表示和局部检测重做了题目要求的前两步；最后再把 MLP/CNN 神经网络对照放到后面，不让分数表抢走主线。当前 \path{build/mswc_course_gbdz_75w_cap40_5_5} 目录保留的是整套实验结果，其中 \texttt{course\_filterbank\_corr} 是 AI 重做版，不是严格课内版。正文里如果提到“课堂方法”，指的是 \texttt{strict\_course\_fft}。
+本文比较三类方法。第一类是我们的短时 FFT 模板方案，用分帧、FFT 幅度谱和归一化相关完成检测；第二类是 AI 重做版 \texttt{course\_filterbank\_corr}，用 log-mel 局部窗、正负模板和自相关改进频谱检测；第三类是 MLP 和 CNN，用来观察学习型模型在同一数据集上的表现。

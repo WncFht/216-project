@@ -1,8 +1,8 @@
 \section{理论推导与两种模板方法}
 
-\subsection{严格课内版：短时 FFT 模板}
+\subsection{我们的方案：短时 FFT 模板}
 
-\texttt{strict\_course\_fft} 的模型假设很直接：首浊辅音的信息集中在词首附近的一个短时片段里，不同类别在局部幅度谱形状上有可区分的原型。录音音量、说话人和词尾元音会引入变化，所以方法只比较归一化后的局部谱形，不直接依赖整词能量。
+我们的方案对应代码中的 \texttt{strict\_course\_fft}。它的模型假设很直接：首浊辅音的信息集中在词首附近的一个短时片段里，不同类别在局部幅度谱形状上有可区分的原型。录音音量、说话人和词尾元音会引入变化，所以方法只比较归一化后的局部谱形，不直接依赖整词能量。
 
 设第 $i$ 个样本的波形为 $x_i[n]$，帧长 $L=20$ ms，帧移 $H=10$ ms，FFT 点数 $N=512$。第 $m$ 帧的频谱写成
 \[
@@ -23,7 +23,7 @@ P_i^{(r)}[k]
 T_c=\frac{\sum_{i:y_i=c}P_i^{(\star)}}
 {\left\|\sum_{i:y_i=c}P_i^{(\star)}\right\|_2}.
 \]
-当前实验先在 dev 集上从 $M\in\{3,4,5,6\}$ 中选择块长，扩大到 75 词/类后选中 $M=5$，再用 train+dev 的同类样本重估最终模板。这个过程只用分帧、FFT、平均和归一化相关，属于严格课内边界。
+实验先在 dev 集上从 $M\in\{3,4,5,6\}$ 中选择块长。当前数据规模下选中 $M=5$，随后用 train+dev 的同类样本重新估计最终模板。这个过程只用分帧、FFT、平均和归一化相关，和题目要求的 MATLAB 频谱分析保持一致。
 
 检测时，对测试样本的所有候选块做同样的描述，并计算
 \[
@@ -35,12 +35,12 @@ s_{i,c}=\max_r\rho_{i,c}^{(r)}.
 \]
 单标签四分类下，预测类别就是 $\arg\max_c s_{i,c}$。这条链路的伪代码放在附录算法~\ref{alg:strict-course}。
 
-图~\ref{fig:strict-template} 展示了严格课内版当前使用的模板构造结果。左边是与类别均值最接近的代表性训练样本块，右边是对应标签的归一化均值模板曲线。
+图~\ref{fig:strict-template} 展示了我们的方案使用的模板构造结果。左边是与类别均值最接近的代表性训练样本块，右边是对应标签的归一化均值模板曲线。
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.95\textwidth]{figures/mswc_course_gbdz_75w_cap40_5_5/strict_course_template_construction.png}
-    \caption{严格课内版的模板构造：先取最大能量块，再对同类 train+dev 样本求均值模板。}
+    \caption{我们的方案的模板构造：先取最大能量块，再对同类 train+dev 样本求均值模板。}
     \label{fig:strict-template}
 \end{figure}
 
@@ -49,7 +49,7 @@ s_{i,c}=\max_r\rho_{i,c}^{(r)}.
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.95\textwidth]{figures/mswc_course_gbdz_75w_cap40_5_5/strict_course_correlation_demo.png}
-    \caption{严格课内版的互相关搜索：先扫候选块，再取每个标签的最大相关分数。}
+    \caption{我们的方案的互相关搜索：先扫候选块，再取每个标签的最大相关分数。}
     \label{fig:strict-corr}
 \end{figure}
 
@@ -95,7 +95,7 @@ s_{i,c}=&\;\max_{\Delta\in\{-2,0,2\}}g_{i,c}^{(\Delta)}.
 \end{aligned}
 \]
 
-这条分数式比严格课内版多了负模板差分、自相关项和更明确的词首定位，因此对应本题 bonus 中“用 AI 重做频谱描述与检测”的主体版本。它保留可解释的谱模板结构，但已经不再是严格课堂工具。伪代码见附录算法~\ref{alg:course-filterbank}。
+这条分数式比我们的方案多了负模板差分、自相关项和更明确的词首定位，因此对应本题 bonus 中“用 AI 重做频谱描述与检测”的主体版本。它仍保留可解释的谱模板结构，但频谱表示和检测规则更复杂。伪代码见附录算法~\ref{alg:course-filterbank}。
 
 图~\ref{fig:course-template-contrast} 展示了 AI 重做版中真正参与判别的正负差分。前两列分别是原始 log-mel 段均值和 onset-centered 段均值的正负模板差，第三列是能量包络自相关的正负模板差。
 
@@ -117,8 +117,8 @@ s_{i,c}=&\;\max_{\Delta\in\{-2,0,2\}}g_{i,c}^{(\Delta)}.
 
 \subsection{MATLAB 对应实现}
 
-严格课内方法在 MATLAB 里对应 \path{src/matlab_course_template_detector.m} 和 \path{src/matlab_course_spectrum_demo.m}。核心打分式子就是一行：
+我们的方案在 MATLAB 里对应 \path{src/matlab_course_template_detector.m} 和 \path{src/matlab_course_spectrum_demo.m}。核心打分式子就是一行：
 \[
 \texttt{score}=\frac{\texttt{mag}^\top \texttt{template}}{\|\texttt{mag}\|_2\|\texttt{template}\|_2}.
 \]
-\path{src/matlab_case_demo.m} 负责把四个案例音频逐条画出来，方便直接看波形和标签分数。这里的 MATLAB demo 主要是把课堂思路画清楚；正式评测里，Python 版本会先在 dev 上选块长，再把 train+dev 的类别样本重估成最终模板。
+\path{src/matlab_case_demo.m} 负责把四个案例音频逐条画出来，方便直接看波形和标签分数。正式评测里，Python 版本会先在 dev 上选块长，再把 train+dev 的类别样本重估成最终模板。
