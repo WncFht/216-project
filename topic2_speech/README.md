@@ -8,7 +8,7 @@
 - `sections/*.tex`：报告正文拆分后的各个 section 文件，`report_cn.tex` 只负责串联。
 - `src/download_mswc_en.sh`：下载 `MSWC English` 原始元数据、split 和音频到 `data/raw/mswc_en/`。
 - `src/prepare_mswc_initial_gbdz_subset.py`：生成精确首浊辅音子集，默认输出 `data/raw/mswc_en_gbdz_initial_balanced_40_5_5/`。
-- `src/run_mswc_course.py`：主实验脚本，先跑严格课内 `strict_course_fft`，再给出 `course_filterbank_corr`、`mlp_ai` 和 `cnn_ai` 对照。
+- `src/run_mswc_course.py`：主实验脚本，先用 dev 选块长度，再把 `strict_course_fft` 的类别模板在 train+dev 上重估，随后给出 `course_filterbank_corr`、`mlp_ai` 和 `cnn_ai` 对照。
 - `src/matlab_course_template_detector.m`：严格课内 MATLAB 检测器，只用短时 FFT 幅度谱和归一化相关。
 - `src/matlab_course_spectrum_demo.m`：输出 `figures/course_matlab/example_short_time_spectra.png` 和 `example_score_matrix.png`。
 - `src/matlab_case_demo.m`：逐条预览四个案例音频，并显示严格课内分数条形图。
@@ -68,7 +68,7 @@ latexmk -xelatex -interaction=nonstopmode -halt-on-error report_cn.tex
 
 | 方法 | label-wise acc. | exact-match acc. | macro-F1 | micro-F1 | samples-F1 |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| 严格课内 FFT 模板法 | 0.6333 | 0.2667 | 0.2598 | 0.2667 | 0.2667 |
+| 严格课内 FFT 模板法 | 0.6717 | 0.3433 | 0.3368 | 0.3433 | 0.3433 |
 | 课外扩展模板法 | 0.7750 | 0.5500 | 0.5462 | 0.5500 | 0.5500 |
 | MLP | 0.7633 | 0.5267 | 0.5258 | 0.5267 | 0.5267 |
 | CNN | 0.6600 | 0.3200 | 0.2219 | 0.3200 | 0.3200 |
@@ -76,6 +76,7 @@ latexmk -xelatex -interaction=nonstopmode -halt-on-error report_cn.tex
 ## 结论摘记
 
 - 主线已经切到严格课内 FFT 模板法。
+- 严格课内版现在不再只靠 4 个 case 模板，而是先在 dev 上选出 `3` 帧块，再把 train+dev 的同类样本重新平均成最终模板。
 - 课外扩展版只作为对照，不再放在前面讲。
 - `/g/` 最难，`/z/` 最容易。
 - 旧的多任务、旧数据入口和旧升级脚本已清理，不再作为当前项目入口。

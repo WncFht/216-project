@@ -23,12 +23,12 @@ cd 216/project/topic2_speech
 - Dataset: `MSWC English subset` with labels `g, b, d, z`.
 - Split sizes: train/dev/test = 2400/300/300.
 - Total files used: 3000.
-- Methods: strict course FFT template detector, course local-window contrastive template + autocorrelation detector, MLP on MFCC/statistics, CNN on log-mel spectrograms.
+- Methods: strict course FFT template detector with dev-tuned block length and train+dev mean-template refit, course local-window contrastive template + autocorrelation detector, MLP on MFCC/statistics, CNN on log-mel spectrograms.
 
 ## Summary metrics
 
                 method  label_wise_accuracy  exact_match_accuracy  macro_f1  micro_f1  samples_f1  mean_positive_f1
-     strict_course_fft             0.633333              0.266667  0.259799  0.266667    0.266667          0.259799
+     strict_course_fft             0.671667              0.343333  0.336769  0.343333    0.343333          0.336769
 course_filterbank_corr             0.775000              0.550000  0.546155  0.550000    0.550000          0.546155
                 mlp_ai             0.763333              0.526667  0.525794  0.526667    0.526667          0.525794
                 cnn_ai             0.660000              0.320000  0.221949  0.320000    0.320000          0.221949
@@ -36,10 +36,10 @@ course_filterbank_corr             0.775000              0.550000  0.546155  0.5
 ## Per-label metrics
 
                 method label  precision   recall       f1  support
-     strict_course_fft     g   0.211268 0.200000 0.205479       75
-     strict_course_fft     b   0.292453 0.413333 0.342541       75
-     strict_course_fft     d   0.288889 0.173333 0.216667       75
-     strict_course_fft     z   0.269231 0.280000 0.274510       75
+     strict_course_fft     g   0.301887 0.213333 0.250000       75
+     strict_course_fft     b   0.367089 0.386667 0.376623       75
+     strict_course_fft     d   0.542857 0.253333 0.345455       75
+     strict_course_fft     z   0.293233 0.520000 0.375000       75
 course_filterbank_corr     g   0.483871 0.400000 0.437956       75
 course_filterbank_corr     b   0.550725 0.506667 0.527778       75
 course_filterbank_corr     d   0.441860 0.506667 0.472050       75
@@ -56,7 +56,7 @@ course_filterbank_corr     z   0.710843 0.786667 0.746835       75
 ## Example predictions
 
 word      phones true_labels strict_course_fft_pred           strict_course_fft_scores course_filterbank_corr_pred        course_filterbank_corr_scores mlp_ai_pred                      mlp_ai_scores cnn_ai_pred                      cnn_ai_scores
- get     G EH1 T           g                      b g:0.774, b:0.927, d:0.923, z:0.773                           g  g:0.003, b:0.001, d:0.001, z:-0.003           g g:0.852, b:0.263, d:0.041, z:0.003           b g:0.682, b:0.720, d:0.525, z:0.070
- boy       B OY1           b                      b g:0.726, b:0.936, d:0.925, z:0.764                           b  g:0.004, b:0.005, d:-0.007, z:0.002           b g:0.235, b:0.815, d:0.047, z:0.001           b g:0.674, b:0.743, d:0.515, z:0.067
- did     D IH1 D           d                      g g:0.879, b:0.781, d:0.795, z:0.838                           z  g:0.000, b:-0.003, d:0.001, z:0.002           d g:0.036, b:0.124, d:0.657, z:0.022           b g:0.707, b:0.763, d:0.536, z:0.041
-zero Z IH1 R OW0           z                      g g:0.958, b:0.793, d:0.694, z:0.879                           z g:-0.003, b:-0.003, d:0.001, z:0.005           z g:0.001, b:0.000, d:0.011, z:0.999           d g:0.456, b:0.468, d:0.518, z:0.408
+ get     G EH1 T           g                      g g:0.925, b:0.909, d:0.914, z:0.913                           g  g:0.003, b:0.001, d:0.001, z:-0.003           g g:0.852, b:0.263, d:0.041, z:0.003           b g:0.682, b:0.720, d:0.525, z:0.070
+ boy       B OY1           b                      b g:0.926, b:0.937, d:0.927, z:0.907                           b  g:0.004, b:0.005, d:-0.007, z:0.002           b g:0.235, b:0.815, d:0.047, z:0.001           b g:0.674, b:0.743, d:0.515, z:0.067
+ did     D IH1 D           d                      d g:0.920, b:0.937, d:0.938, z:0.924                           z  g:0.000, b:-0.003, d:0.001, z:0.002           d g:0.036, b:0.124, d:0.657, z:0.022           b g:0.707, b:0.763, d:0.536, z:0.041
+zero Z IH1 R OW0           z                      d g:0.879, b:0.881, d:0.893, z:0.891                           z g:-0.003, b:-0.003, d:0.001, z:0.005           z g:0.001, b:0.000, d:0.011, z:0.999           d g:0.456, b:0.468, d:0.518, z:0.408

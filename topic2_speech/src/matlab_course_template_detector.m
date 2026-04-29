@@ -55,7 +55,7 @@ cfg = struct();
 cfg.target_sr = 16000;
 cfg.frame_ms = 20;
 cfg.hop_ms = 10;
-cfg.block_frames = 4;
+cfg.block_frames = 3;
 cfg.nfft = 512;
 cfg.hop_s = cfg.hop_ms / 1000;
 end

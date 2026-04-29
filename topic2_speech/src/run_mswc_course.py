@@ -56,13 +56,8 @@ COURSE_AUTOCORR_WEIGHT = 0.35
 STRICT_FRAME_MS = 20
 STRICT_HOP_MS = 10
 STRICT_BLOCK_FRAMES = 4
+STRICT_BLOCK_FRAME_OPTIONS = (3, 4, 5, 6)
 STRICT_NFFT = 512
-STRICT_TEMPLATE_CASES = {
-    "g": "case_g_get.wav",
-    "b": "case_b_boy.wav",
-    "d": "case_d_did.wav",
-    "z": "case_z_zero.wav",
-}
 
 
 @dataclass
@@ -354,8 +349,8 @@ def strict_frame_signal(x: np.ndarray, sr: int) -> np.ndarray:
     return frames
 
 
-def strict_block_descriptor(frames: np.ndarray, start_frame: int) -> np.ndarray:
-    block = pad_or_trim_rows(frames, start_frame, STRICT_BLOCK_FRAMES)
+def strict_block_descriptor(frames: np.ndarray, start_frame: int, block_frames: int = STRICT_BLOCK_FRAMES) -> np.ndarray:
+    block = pad_or_trim_rows(frames, start_frame, block_frames)
     spec = np.abs(np.fft.fft(block, STRICT_NFFT, axis=1))[:, : STRICT_NFFT // 2 + 1]
     row_max = np.max(spec, axis=1, keepdims=True)
     row_max[row_max == 0] = 1
@@ -365,60 +360,86 @@ def strict_block_descriptor(frames: np.ndarray, start_frame: int) -> np.ndarray:
     return descriptor.astype(np.float32)
 
 
-def strict_select_max_energy_descriptor(x: np.ndarray, sr: int):
+def strict_select_max_energy_descriptor(x: np.ndarray, sr: int, block_frames: int = STRICT_BLOCK_FRAMES):
     frames = strict_frame_signal(x, sr)
     n_frames = frames.shape[0]
-    n_starts = max(1, n_frames - STRICT_BLOCK_FRAMES + 1)
+    n_starts = max(1, n_frames - block_frames + 1)
     best_energy = -np.inf
     best_start = 0
     best_descriptor = np.zeros(STRICT_NFFT // 2 + 1, dtype=np.float32)
     for start in range(n_starts):
-        block = pad_or_trim_rows(frames, start, STRICT_BLOCK_FRAMES)
+        block = pad_or_trim_rows(frames, start, block_frames)
         block_energy = float(np.sum(block**2))
         if block_energy > best_energy:
             best_energy = block_energy
             best_start = start
-            best_descriptor = strict_block_descriptor(frames, start)
+            best_descriptor = strict_block_descriptor(frames, start, block_frames=block_frames)
     return best_descriptor, best_start
 
 
-def strict_all_candidate_descriptors(x: np.ndarray, sr: int):
+def strict_all_candidate_descriptors(x: np.ndarray, sr: int, block_frames: int = STRICT_BLOCK_FRAMES):
     frames = strict_frame_signal(x, sr)
     n_frames = frames.shape[0]
-    n_starts = max(1, n_frames - STRICT_BLOCK_FRAMES + 1)
+    n_starts = max(1, n_frames - block_frames + 1)
     matrix = np.zeros((n_starts, STRICT_NFFT // 2 + 1), dtype=np.float32)
     start_frames = np.arange(n_starts, dtype=np.int32)
     for start in range(n_starts):
-        matrix[start] = strict_block_descriptor(frames, start)
+        matrix[start] = strict_block_descriptor(frames, start, block_frames=block_frames)
     return matrix, start_frames
 
 
-def build_strict_course_bank(case_dir: Path, labels: Sequence[str]):
-    manifest_path = case_dir / "case_manifest.csv"
-    manifest = pd.read_csv(manifest_path)
-    label_map = {str(row["label"]).strip(): row for _, row in manifest.iterrows()}
-
+def fit_strict_course_bank(
+    paths: Sequence[str | Path],
+    y: np.ndarray,
+    labels: Sequence[str],
+    *,
+    words: Sequence[str] | None = None,
+    block_frames: int = STRICT_BLOCK_FRAMES,
+    template_source: str = "train_split_mean_template",
+):
     template_paths: List[str] = []
     template_words: List[str] = []
     template_starts: List[int] = []
+    template_counts: List[int] = []
     templates: List[np.ndarray] = []
+    labels = list(labels)
+    y = np.asarray(y)
+    word_vals = list(words) if words is not None else [Path(p).stem for p in paths]
 
-    for lab in labels:
-        row = label_map[lab]
-        wav_path = case_dir / str(row["filename"])
-        sr, x = load_wav(wav_path)
-        template, start_frame = strict_select_max_energy_descriptor(x, sr)
-        template_paths.append(str(wav_path))
-        template_words.append(str(row["word"]))
-        template_starts.append(int(start_frame))
-        templates.append(template)
+    for j, lab in enumerate(labels):
+        descs: List[np.ndarray] = []
+        rep_paths: List[str] = []
+        rep_words: List[str] = []
+        rep_starts: List[int] = []
+        for path_val, word_val, target in zip(paths, word_vals, y[:, j]):
+            if int(target) != 1:
+                continue
+            sr, x = load_wav(Path(path_val))
+            descriptor, start_frame = strict_select_max_energy_descriptor(x, sr, block_frames=block_frames)
+            descs.append(descriptor)
+            rep_paths.append(str(path_val))
+            rep_words.append(str(word_val))
+            rep_starts.append(int(start_frame))
+        if not descs:
+            raise ValueError(f"No positive training samples found for strict course label {lab}")
+        desc_matrix = np.vstack(descs).astype(np.float32)
+        template = desc_matrix.mean(axis=0)
+        template = template / max(float(np.linalg.norm(template)), 1e-12)
+        rep_idx = int(np.argmax(desc_matrix @ template))
+        template_paths.append(rep_paths[rep_idx])
+        template_words.append(rep_words[rep_idx])
+        template_starts.append(rep_starts[rep_idx])
+        template_counts.append(len(descs))
+        templates.append(template.astype(np.float32))
 
     templates_arr = np.vstack(templates).astype(np.float32)
     return {
-        "labels": list(labels),
+        "labels": labels,
+        "template_source": template_source,
         "template_paths": template_paths,
         "template_words": template_words,
         "template_start_frames": np.asarray(template_starts, dtype=np.int32),
+        "template_sample_counts": np.asarray(template_counts, dtype=np.int32),
         "templates": templates_arr,
         "freq_hz": np.arange(STRICT_NFFT // 2 + 1, dtype=np.float32)
         * (16000.0 / STRICT_NFFT),
@@ -426,7 +447,7 @@ def build_strict_course_bank(case_dir: Path, labels: Sequence[str]):
             "target_sr": 16000,
             "frame_ms": STRICT_FRAME_MS,
             "hop_ms": STRICT_HOP_MS,
-            "block_frames": STRICT_BLOCK_FRAMES,
+            "block_frames": int(block_frames),
             "nfft": STRICT_NFFT,
         },
     }
@@ -435,11 +456,55 @@ def build_strict_course_bank(case_dir: Path, labels: Sequence[str]):
 def score_strict_course_detector(paths: Sequence[str | Path], bank: Dict[str, np.ndarray]) -> np.ndarray:
     scores = np.zeros((len(paths), len(bank["labels"])), dtype=np.float32)
     templates = np.asarray(bank["templates"], dtype=np.float32)
+    block_frames = int(bank["cfg"].get("block_frames", STRICT_BLOCK_FRAMES))
     for i, wav_path in enumerate(paths):
         sr, x = load_wav(Path(wav_path))
-        matrix, _ = strict_all_candidate_descriptors(x, sr)
+        matrix, _ = strict_all_candidate_descriptors(x, sr, block_frames=block_frames)
         scores[i] = np.max(matrix @ templates.T, axis=0)
     return scores
+
+
+def tune_strict_course_detector(
+    train_paths: Sequence[str | Path],
+    y_train: np.ndarray,
+    dev_paths: Sequence[str | Path],
+    y_dev: np.ndarray,
+    labels: Sequence[str],
+    *,
+    train_words: Sequence[str] | None = None,
+    exclusive: bool = False,
+):
+    history = []
+    best_tuple = None
+    best_bank = None
+    best_thresholds = None
+    for block_frames in STRICT_BLOCK_FRAME_OPTIONS:
+        bank = fit_strict_course_bank(
+            train_paths,
+            y_train,
+            labels,
+            words=train_words,
+            block_frames=block_frames,
+        )
+        dev_scores = score_strict_course_detector(dev_paths, bank)
+        thresholds = fit_thresholds(y_dev, dev_scores)
+        dev_pred = predict_with_thresholds(dev_scores, thresholds, exclusive=exclusive)
+        exact_match = float(accuracy_score(y_dev, dev_pred))
+        macro_f1 = float(f1_score(y_dev, dev_pred, average="macro", zero_division=0))
+        history.append(
+            {
+                "block_frames": int(block_frames),
+                "exact_match_accuracy": exact_match,
+                "macro_f1": macro_f1,
+            }
+        )
+        key = (exact_match, macro_f1, -int(block_frames))
+        if best_tuple is None or key > best_tuple:
+            best_tuple = key
+            best_bank = bank
+            best_thresholds = thresholds
+    assert best_bank is not None and best_thresholds is not None
+    return best_bank, best_thresholds, history
 
 
 def build_dataset(items: Sequence[Item], labels: Sequence[str], cache_path: Path):
@@ -756,11 +821,12 @@ def plot_score_distribution(scores: np.ndarray, y_true: np.ndarray, labels: Sequ
 def plot_strict_template_construction(bank: Dict[str, np.ndarray], out_path: Path):
     fig, axes = plt.subplots(len(bank["labels"]), 2, figsize=(10.5, 8.5), constrained_layout=True)
     freq_khz = np.asarray(bank["freq_hz"], dtype=np.float32) / 1000.0
+    block_frames = int(bank["cfg"].get("block_frames", STRICT_BLOCK_FRAMES))
     for i, lab in enumerate(bank["labels"]):
         wav_path = Path(bank["template_paths"][i])
         _, x = load_wav(wav_path)
         frames = strict_frame_signal(x, 16000)
-        block = pad_or_trim_rows(frames, int(bank["template_start_frames"][i]), STRICT_BLOCK_FRAMES)
+        block = pad_or_trim_rows(frames, int(bank["template_start_frames"][i]), block_frames)
         spec = np.abs(np.fft.fft(block, STRICT_NFFT, axis=1))[:, : STRICT_NFFT // 2 + 1]
         spec = spec / np.maximum(spec.max(axis=1, keepdims=True), 1e-12)
         mean_spec = np.asarray(bank["templates"][i], dtype=np.float32)
@@ -770,7 +836,7 @@ def plot_strict_template_construction(bank: Dict[str, np.ndarray], out_path: Pat
             spec,
             aspect="auto",
             origin="lower",
-            extent=[freq_khz[0], freq_khz[-1], 1, STRICT_BLOCK_FRAMES],
+            extent=[freq_khz[0], freq_khz[-1], 1, block_frames],
             cmap="magma",
         )
         ax0.set_title(f"/{lab}/ template block: {bank['template_words'][i]}")
@@ -796,7 +862,8 @@ def plot_strict_template_construction(bank: Dict[str, np.ndarray], out_path: Pat
 def plot_strict_correlation_demo(example_path: Path, bank: Dict[str, np.ndarray], label: str, out_path: Path):
     sr, x = load_wav(example_path)
     frames = strict_frame_signal(x, sr)
-    descriptors, start_frames = strict_all_candidate_descriptors(x, sr)
+    block_frames = int(bank["cfg"].get("block_frames", STRICT_BLOCK_FRAMES))
+    descriptors, start_frames = strict_all_candidate_descriptors(x, sr, block_frames=block_frames)
     score_traces = descriptors @ np.asarray(bank["templates"], dtype=np.float32).T
     label_idx = list(bank["labels"]).index(label)
     best_idx = int(np.argmax(score_traces[:, label_idx]))
@@ -804,7 +871,7 @@ def plot_strict_correlation_demo(example_path: Path, bank: Dict[str, np.ndarray]
     frame_len = max(1, round(sr * STRICT_FRAME_MS / 1000))
     hop = max(1, round(sr * STRICT_HOP_MS / 1000))
     start_sample = best_start * hop
-    end_sample = min(len(x), start_sample + frame_len + hop * (STRICT_BLOCK_FRAMES - 1))
+    end_sample = min(len(x), start_sample + frame_len + hop * (block_frames - 1))
     time_axis = np.arange(len(x), dtype=np.float32) / float(sr)
     start_times = start_frames.astype(np.float32) * (STRICT_HOP_MS / 1000.0)
 
@@ -819,17 +886,17 @@ def plot_strict_correlation_demo(example_path: Path, bank: Dict[str, np.ndarray]
     ax.grid(alpha=0.25)
 
     ax = axes[1]
-    block = pad_or_trim_rows(frames, best_start, STRICT_BLOCK_FRAMES)
+    block = pad_or_trim_rows(frames, best_start, block_frames)
     block_spec = np.abs(np.fft.fft(block, STRICT_NFFT, axis=1))[:, : STRICT_NFFT // 2 + 1]
     block_spec = block_spec / np.maximum(block_spec.max(axis=1, keepdims=True), 1e-12)
     im = ax.imshow(
         block_spec,
         aspect="auto",
         origin="lower",
-        extent=[0, STRICT_NFFT // 2, 1, STRICT_BLOCK_FRAMES],
+        extent=[0, STRICT_NFFT // 2, 1, block_frames],
         cmap="magma",
     )
-    ax.set_title("Best-matching 4-frame block")
+    ax.set_title(f"Best-matching {block_frames}-frame block")
     ax.set_xlabel("FFT bin")
     ax.set_ylabel("Frame in block")
     fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
@@ -1083,10 +1150,24 @@ def main() -> int:
     Y_tr, Y_dev, Y_te = Y[train_idx], Y[dev_idx], Y[test_idx]
     exclusive_decode = bool(np.all(Y.sum(axis=1) == 1))
 
-    case_dir = Path(__file__).resolve().parents[1] / "cases"
-    strict_bank = build_strict_course_bank(case_dir, args.labels)
-    strict_dev_scores = score_strict_course_detector(data["paths"][dev_idx], strict_bank)
-    strict_thresholds = fit_thresholds(Y_dev, strict_dev_scores)
+    strict_bank, strict_thresholds, strict_tuning_history = tune_strict_course_detector(
+        data["paths"][train_idx],
+        Y_tr,
+        data["paths"][dev_idx],
+        Y_dev,
+        args.labels,
+        train_words=data["words"][train_idx],
+        exclusive=exclusive_decode,
+    )
+    if exclusive_decode:
+        strict_bank = fit_strict_course_bank(
+            data["paths"][np.r_[train_idx, dev_idx]],
+            Y[np.r_[train_idx, dev_idx]],
+            args.labels,
+            words=data["words"][np.r_[train_idx, dev_idx]],
+            block_frames=int(strict_bank["cfg"]["block_frames"]),
+            template_source="train_dev_refit_mean_template",
+        )
     strict_te_scores = score_strict_course_detector(data["paths"][test_idx], strict_bank)
     strict_te_pred = predict_with_thresholds(strict_te_scores, strict_thresholds, exclusive=exclusive_decode)
 
@@ -1122,7 +1203,7 @@ def main() -> int:
         "course_threshold": course_thresholds,
     }
     method_desc_parts = [
-        "strict course FFT template detector",
+        "strict course FFT template detector with dev-tuned block length and train+dev mean-template refit",
         "course local-window contrastive template + autocorrelation detector",
     ]
     cnn_summary = None
@@ -1216,12 +1297,17 @@ def main() -> int:
         "test_files": int(len(test_idx)),
         "positive_counts_test": {lab: int(Y_te[:, j].sum()) for j, lab in enumerate(args.labels)},
         "strict_course_detector": {
+            "template_source": strict_bank.get("template_source", "unknown"),
+            "refit_on_train_dev": bool(exclusive_decode),
             "frame_ms": STRICT_FRAME_MS,
             "hop_ms": STRICT_HOP_MS,
-            "block_frames": STRICT_BLOCK_FRAMES,
+            "block_frames": int(strict_bank["cfg"]["block_frames"]),
+            "block_frame_candidates": list(STRICT_BLOCK_FRAME_OPTIONS),
             "nfft": STRICT_NFFT,
             "template_words": strict_bank["template_words"],
             "template_paths": strict_bank["template_paths"],
+            "template_sample_counts": strict_bank["template_sample_counts"].astype(int).tolist(),
+            "dev_tuning_history": strict_tuning_history,
         },
         "course_detector": {
             "n_mels": FILTERBANK_MELS,
@@ -1247,9 +1333,11 @@ def main() -> int:
     pd.DataFrame(threshold_table).to_csv(args.out_dir / "thresholds.csv", index=False)
     strict_bank_json = {
         "labels": strict_bank["labels"],
+        "template_source": strict_bank.get("template_source", "unknown"),
         "template_paths": strict_bank["template_paths"],
         "template_words": strict_bank["template_words"],
         "template_start_frames": strict_bank["template_start_frames"].astype(int).tolist(),
+        "template_sample_counts": strict_bank["template_sample_counts"].astype(int).tolist(),
         "templates": strict_bank["templates"].astype(float).tolist(),
         "freq_hz": strict_bank["freq_hz"].astype(float).tolist(),
         "cfg": strict_bank["cfg"],

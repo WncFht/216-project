@@ -4,6 +4,8 @@
 
 严格课内版的结果先单独看。因为这是单标签四分类，exact-match 是更直接的指标，label-wise accuracy 只作为辅助参考。
 
+这次严格课内版做了两处仍然属于课堂边界内的改动：第一，不再只用四个 case 音频当模板，而是先把训练集同类样本的最大能量块平均成类别模板，再在选定块长后用 train+dev 重新估计最终模板；第二，在 dev 集上从 3--6 帧里选块长度，最终选中 3 帧。这样做以后，strict 版本的整体正确率有了进一步提升。
+
 \begin{table}[H]
     \centering
     \caption{严格课内 FFT 模板法的主指标}
@@ -12,7 +14,7 @@
         \toprule
         方法 & label-wise acc. & exact-match acc. & macro-F1 & micro-F1 & samples-F1 \\
         \midrule
-        strict\_course\_fft & 0.6333 & 0.2667 & 0.2598 & 0.2667 & 0.2667 \\
+        strict\_course\_fft & 0.6717 & 0.3433 & 0.3368 & 0.3433 & 0.3433 \\
         \bottomrule
     \end{tabular}
 \end{table}
@@ -25,7 +27,7 @@
         \toprule
         方法 & /g/ & /b/ & /d/ & /z/ \\
         \midrule
-        strict\_course\_fft & 0.205 & 0.343 & 0.217 & 0.275 \\
+        strict\_course\_fft & 0.250 & 0.377 & 0.345 & 0.375 \\
         \bottomrule
     \end{tabular}
 \end{table}
@@ -74,7 +76,7 @@
         \toprule
         方法 & label-wise acc. & exact-match acc. & macro-F1 & micro-F1 & samples-F1 \\
         \midrule
-        strict\_course\_fft & 0.6333 & 0.2667 & 0.2598 & 0.2667 & 0.2667 \\
+        strict\_course\_fft & 0.6717 & 0.3433 & 0.3368 & 0.3433 & 0.3433 \\
         course\_filterbank\_corr & 0.7750 & 0.5500 & 0.5462 & 0.5500 & 0.5500 \\
         \bottomrule
     \end{tabular}

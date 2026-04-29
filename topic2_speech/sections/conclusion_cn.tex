@@ -3,7 +3,7 @@
 本文完成了 Topic 2 的重构，核心结论如下：
 \begin{itemize}[nosep]
     \item 新数据集把任务收紧到了首浊辅音检测，标签边界比旧版清楚得多；
-    \item 严格课内版可以只用短时 FFT 幅度谱和归一化相关完成完整的检测链路；
+    \item 严格课内版可以只用短时 FFT 幅度谱和归一化相关完成完整的检测链路；在当前数据集上，先用 dev 选出 3 帧块，再用 train+dev 重估模板后，exact-match 提升到 0.343；
     \item 课外扩展版 \texttt{course\_filterbank\_corr} 在当前四类任务上取得最佳整体结果，exact-match 为 0.550；
     \item MLP 的 exact-match 为 0.527，CNN 为 0.320，说明更强的模型并不会自动替代做对了局部频谱建模的模板法；
     \item /z/ 最容易、/g/ 最难，这和声学图里的持续摩擦与短促爆破一致。
