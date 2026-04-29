@@ -148,22 +148,24 @@ end
 end
 
 function wavPath = resolve_case_audio_path(caseDir, fileValue)
-fileValue = char(fileValue);
+fileValue = strtrim(char(fileValue));
 if isfile(fileValue)
     wavPath = fileValue;
     return;
 end
 
-candidate = fullfile(caseDir, fileValue);
-if isfile(candidate)
-    wavPath = candidate;
-    return;
-end
-
-candidate = fullfile(caseDir, 'cases', fileValue);
-if isfile(candidate)
-    wavPath = candidate;
-    return;
+candidateDirs = {
+    caseDir
+    fileparts(caseDir)
+    fullfile(caseDir, 'cases')
+    fullfile(fileparts(caseDir), 'cases')
+};
+for i = 1:numel(candidateDirs)
+    candidate = fullfile(candidateDirs{i}, fileValue);
+    if isfile(candidate)
+        wavPath = candidate;
+        return;
+    end
 end
 
 error('Unable to locate audio file: %s', fileValue);

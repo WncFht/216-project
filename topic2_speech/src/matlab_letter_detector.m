@@ -174,11 +174,20 @@ if numel(x) < frameLen
 end
 nFrames = floor((numel(x) - frameLen) / hop) + 1;
 frames = zeros(nFrames, frameLen);
-win = hamming(frameLen, 'periodic');
+win = periodic_hamming(frameLen);
 for i = 1:nFrames
     idx = (i - 1) * hop + (1:frameLen);
     frames(i, :) = x(idx).' .* win.';
 end
+end
+
+function win = periodic_hamming(n)
+if n <= 1
+    win = ones(max(1, n), 1);
+    return;
+end
+k = (0:(n - 1))';
+win = 0.54 - 0.46 * cos(2 * pi * k / n);
 end
 
 function fb = mel_filterbank(sr, nFft, nMels, fmin, fmax)
