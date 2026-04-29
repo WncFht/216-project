@@ -1,0 +1,68 @@
+\section{理论推导与严格课内方法}
+
+\subsection{从波形到短时 FFT 模板}
+
+严格课内版只用四步：短时分帧、FFT、局部块平均、归一化相关。设第 $i$ 个样本的波形为 $x_i[n]$，帧长 $L=20$ ms，帧移 $H=10$ ms，FFT 点数 $N=512$。第 $m$ 帧的频谱可写成
+\[
+X_{i,m}[k] = \sum_{n=0}^{L-1} x_i[n+mH] e^{-j2\pi kn/N},\qquad k=0,\dots,N-1.
+\]
+
+因为词首辅音往往只占很短的一段时间，所以不能直接看整词平均谱，而要在整词上滑动一个短时块。设每个块包含连续 $M=4$ 帧，则块描述子定义为
+\[
+P_i^{(r)}[k]
+=
+\frac{1}{M}\sum_{m=0}^{M-1}
+\frac{|X_{i,r+m}[k]|}{\max_{\kappa}|X_{i,r+m}[\kappa]|}.
+\]
+这里先按帧归一化，再在块内平均，是为了减小录音音量差异，把重点放在谱形而不是绝对能量上。
+
+模板的构造也很直接：对每个标签，先在代表词上找能量最大的 4 帧块，再把这个块的归一化幅度谱当作该标签模板。模板最终再做一次 $L_2$ 归一化，得到
+\[
+T_c[k] = \frac{1}{\|P_c\|_2} P_c[k].
+\]
+这样得到的模板不是“学出来”的参数，而是课堂上能直接解释的局部频谱原型。
+
+\subsection{模板长什么样}
+
+图~\ref{fig:strict-template} 展示了四个代表词的模板构造过程。左边是每个词中能量最大的 4 帧块的短时 FFT 幅度谱，右边是对应的归一化模板曲线。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\textwidth]{figures/mswc_course_gbdz_local_patch_v1/strict_course_template_construction.png}
+    \caption{严格课内版的模板构造：先取最大能量块，再平均块内 FFT 幅度谱。}
+    \label{fig:strict-template}
+\end{figure}
+
+这张图比较重要，因为它把“模板”变成了可见的对象。/z/ 的高频摩擦能量更连续，/b/、/d/、/g/ 的起始爆破更短，模板差异主要就落在这些局部区间里。
+
+\subsection{互相关如何扫过整词}
+
+检测时，对测试样本的所有候选块做同样的描述，再和模板做归一化内积：
+\[
+\rho_{i,c}^{(r)}
+=
+\frac{\langle P_i^{(r)},T_c\rangle}
+{\|P_i^{(r)}\|_2\|T_c\|_2}.
+\]
+最终分数取整词范围内的最大值
+\[
+s_{i,c}=\max_r \rho_{i,c}^{(r)}.
+\]
+如果是单标签四分类，就直接取 $\arg\max_c s_{i,c}$。如果保留一对多接口，也可以再回到 dev 集上选阈值。本文主线用的是单标签四分类，所以正文里更关心最大分数对应哪一类，而不是每类是否过阈值。
+
+图~\ref{fig:strict-corr} 给出了这一过程的可视化：上图是波形，中间是最匹配的 4 帧块，下图是四个模板在所有候选起点上的相关分数。它对应的就是“先找局部证据，再看这段证据像哪一个模板”。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\textwidth]{figures/mswc_course_gbdz_local_patch_v1/strict_course_correlation_demo.png}
+    \caption{严格课内版的互相关搜索：先扫候选块，再取每个标签的最大相关分数。}
+    \label{fig:strict-corr}
+\end{figure}
+
+\subsection{MATLAB 对应实现}
+
+这套严格课内方法在 MATLAB 里对应 \path{src/matlab_course_template_detector.m} 和 \path{src/matlab_course_spectrum_demo.m}。核心打分式子就是一行：
+\[
+\texttt{score}=\frac{\texttt{mag}^\top \texttt{template}}{\|\texttt{mag}\|_2\|\texttt{template}\|_2}.
+\]
+\path{src/matlab_case_demo.m} 则负责把四个案例音频逐条画出来，方便直接看波形和标签分数。

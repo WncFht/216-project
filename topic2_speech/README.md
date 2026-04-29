@@ -5,6 +5,7 @@
 ## 当前主线文件
 
 - `report_cn.tex`：中文报告源文件。
+- `sections/*.tex`：报告正文拆分后的各个 section 文件，`report_cn.tex` 只负责串联。
 - `src/download_mswc_en.sh`：下载 `MSWC English` 原始元数据、split 和音频到 `data/raw/mswc_en/`。
 - `src/prepare_mswc_initial_gbdz_subset.py`：生成精确首浊辅音子集，默认输出 `data/raw/mswc_en_gbdz_initial_balanced_40_5_5/`。
 - `src/run_mswc_course.py`：主实验脚本，先跑严格课内 `strict_course_fft`，再给出 `course_filterbank_corr`、`mlp_ai` 和 `cnn_ai` 对照。

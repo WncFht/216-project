@@ -1,0 +1,27 @@
+\section{案例分析与可视化}
+
+\subsection{四个代表词的频谱模板}
+
+图~\ref{fig:matlab-spectra} 给出了四个代表词在 MATLAB demo 里的短时 FFT 模板。它不是训练图，而是用来确认模板形状到底长什么样。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\textwidth]{figures/course_matlab/example_short_time_spectra.png}
+    \caption{四个代表词的短时 FFT 幅度谱模板。}
+    \label{fig:matlab-spectra}
+\end{figure}
+
+从图上能直接看出，/z/ 的高频摩擦更连续，/b/ 和 /d/ 的起始爆破更短，/g/ 的短时结构最容易被时间对齐误差冲掉。这个结论和模板构造图是一致的。
+
+\subsection{相关得分矩阵}
+
+图~\ref{fig:matlab-score} 是同一组模板在四个案例词上的相关得分矩阵。它的作用不是证明模型多强，而是说明“模板和查询之间的相关”这件事本身确实在运行。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.70\textwidth]{figures/course_matlab/example_score_matrix.png}
+    \caption{四个代表词对应的相关得分矩阵。}
+    \label{fig:matlab-score}
+\end{figure}
+
+这个矩阵比单纯看波形更直接，因为它把“哪个模板更像这段语音”变成了数值。如果相关分数差距不大，就说明这个词首辅音对齐还不够稳，这也是后面扩展版要解决的点。

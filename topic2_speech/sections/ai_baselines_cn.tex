@@ -1,0 +1,42 @@
+\section{AI 对照与训练曲线}
+
+AI 基线放到这里，是因为它们只负责对照，不负责定义主线。代码里保留的是一个统计特征 MLP 和一个小型 CNN：前者吃 MFCC 和 band-energy 统计量，后者直接吃整词 log-mel spectrogram。
+
+\begin{table}[H]
+    \centering
+    \caption{AI 基线的整体指标}
+    \label{tab:ai-summary}
+    \begin{tabular}{lccccc}
+        \toprule
+        方法 & label-wise acc. & exact-match acc. & macro-F1 & micro-F1 & samples-F1 \\
+        \midrule
+        MLP & 0.7633 & 0.5267 & 0.5258 & 0.5267 & 0.5267 \\
+        CNN & 0.6600 & 0.3200 & 0.2219 & 0.3200 & 0.3200 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+从这个任务上看，MLP 是一个稳定的统计基线，但仍然没有超过扩展模板法；CNN 的训练过程能跑起来，测试指标却明显落后，说明在这个数据规模上，直接端到端吃整词谱图并没有自动把词首证据提出来。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth]{figures/mswc_course_gbdz_local_patch_v1/cnn_history.png}
+    \caption{CNN 的训练曲线。}
+    \label{fig:cnn-history}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth]{figures/mswc_course_gbdz_local_patch_v1/metric_summary.png}
+    \caption{全部方法的总体指标汇总。}
+    \label{fig:metric-summary}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth]{figures/mswc_course_gbdz_local_patch_v1/per_label_f1.png}
+    \caption{全部方法在四个标签上的 F1 对比。}
+    \label{fig:per-label-f1}
+\end{figure}
+
+这几张图放在后面，是为了把 AI 基线的角色说清楚：它们可以比较，但不该先占位置。对本文来说，真正的收获不是“CNN 有没有赢”，而是主线已经从一开始就定义成了可解释的课堂方法。

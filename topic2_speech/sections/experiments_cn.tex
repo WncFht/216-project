@@ -1,0 +1,97 @@
+\section{实验结果与比较}
+
+\subsection{严格课内主线}
+
+严格课内版的结果先单独看。因为这是单标签四分类，exact-match 是更直接的指标，label-wise accuracy 只作为辅助参考。
+
+\begin{table}[H]
+    \centering
+    \caption{严格课内 FFT 模板法的主指标}
+    \label{tab:strict-main}
+    \begin{tabular}{lccccc}
+        \toprule
+        方法 & label-wise acc. & exact-match acc. & macro-F1 & micro-F1 & samples-F1 \\
+        \midrule
+        strict\_course\_fft & 0.6333 & 0.2667 & 0.2598 & 0.2667 & 0.2667 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\begin{table}[H]
+    \centering
+    \caption{严格课内 FFT 模板法的分标签 F1}
+    \label{tab:strict-per-label}
+    \begin{tabular}{lcccc}
+        \toprule
+        方法 & /g/ & /b/ & /d/ & /z/ \\
+        \midrule
+        strict\_course\_fft & 0.205 & 0.343 & 0.217 & 0.275 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+图~\ref{fig:strict-score-dist} 进一步把四个标签的分数分布画出来。正样本和负样本有一定分离，但重叠仍然明显，所以严格课内版能说明任务，却还不够稳。
+
+\begin{figure}[H]
+    \centering
+    \begin{minipage}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/mswc_course_gbdz_local_patch_v1/strict_course/score_distribution_g.png}
+        \small /g/
+    \end{minipage}\hfill
+    \begin{minipage}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/mswc_course_gbdz_local_patch_v1/strict_course/score_distribution_b.png}
+        \small /b/
+    \end{minipage}
+
+    \vspace{0.5em}
+    \begin{minipage}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/mswc_course_gbdz_local_patch_v1/strict_course/score_distribution_d.png}
+        \small /d/
+    \end{minipage}\hfill
+    \begin{minipage}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/mswc_course_gbdz_local_patch_v1/strict_course/score_distribution_z.png}
+        \small /z/
+    \end{minipage}
+    \caption{严格课内版四个标签的得分分布。}
+    \label{fig:strict-score-dist}
+\end{figure}
+
+\subsection{课外扩展版对照}
+
+严格课内版之外，代码里还保留了 \texttt{course\_filterbank\_corr}。它先做局部窗定位，再在局部频谱上比较正负模板，并把自相关线索也纳入分数。这个版本已经超出了课堂工具本身，所以这里只把它当扩展对照。
+
+\begin{table}[H]
+    \centering
+    \small
+    \setlength{\tabcolsep}{4pt}
+    \caption{严格课内版与课外扩展版的整体比较}
+    \label{tab:course-compare}
+    \begin{tabular}{lccccc}
+        \toprule
+        方法 & label-wise acc. & exact-match acc. & macro-F1 & micro-F1 & samples-F1 \\
+        \midrule
+        strict\_course\_fft & 0.6333 & 0.2667 & 0.2598 & 0.2667 & 0.2667 \\
+        course\_filterbank\_corr & 0.7750 & 0.5500 & 0.5462 & 0.5500 & 0.5500 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+扩展版的提升很明显，主要来自两点：一是它把搜索范围更精确地收到了词首附近，二是它把局部窗里的正负模板差分显式算进去了。图~\ref{fig:ext-template-grid} 和图~\ref{fig:ext-examples} 仍然保留在报告里，目的就是把这条扩展链路看清楚。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\textwidth]{figures/mswc_course_gbdz_local_patch_v1/letter_examples.png}
+    \caption{扩展版对应的四个代表样本。}
+    \label{fig:ext-examples}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.90\textwidth]{figures/mswc_course_gbdz_local_patch_v1/template_grid.png}
+    \caption{扩展版的平均 log-mel 模板。}
+    \label{fig:ext-template-grid}
+\end{figure}
