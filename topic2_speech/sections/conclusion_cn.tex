@@ -4,7 +4,7 @@
 \begin{itemize}[nosep]
     \item 新数据集把任务收紧到了首浊辅音检测，当前主线使用每类 75 个词，共 300 个词、6796 条语音，标签边界比旧版清楚得多；
     \item 严格课内版可以只用短时 FFT 幅度谱和归一化相关完成完整检测链路；在当前数据集上，dev 选出 5 帧块，再用 train+dev 重估模板后，exact-match 为 0.265；
-    \item 扩展模板法 \texttt{course\_filterbank\_corr} 通过 log-mel 词首局部窗、正负模板差分和自相关线索把 exact-match 提升到 0.503；
+    \item AI 重做版 \texttt{course\_filterbank\_corr} 通过 log-mel 词首局部窗、正负模板差分和自相关线索把 exact-match 提升到 0.503；
     \item MLP 的 exact-match 为 0.485，CNN 为 0.559。扩大词表后 CNN 成为最高分方法，但模板法仍然提供了更清楚的声学解释；
     \item /z/ 最容易，这和持续摩擦能量更长、更稳定一致；/g/、/b/、/d/ 的短促爆破更依赖对齐，因此仍是主要错误来源。
 \end{itemize}

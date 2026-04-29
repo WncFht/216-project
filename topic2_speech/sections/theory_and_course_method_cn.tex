@@ -53,7 +53,7 @@ s_{i,c}=\max_r\rho_{i,c}^{(r)}.
     \label{fig:strict-corr}
 \end{figure}
 
-\subsection{扩展模板法：filterbank 正负模板与自相关}
+\subsection{AI 重做版：filterbank 正负模板与自相关}
 
 \texttt{course\_filterbank\_corr} 仍然是模板法，但它加入了三件额外设计：用 mel filterbank 降维，用能量变化定位词首局部窗，并为每个标签同时建正模板和负模板。它的模型假设是：真正有用的证据主要在词首附近；某个标签不仅要像自己的正样本，也要不像其他三个标签；/z/ 这类持续摩擦音和 /g/、/b/、/d/ 这类短促爆破音，在局部能量包络的自相关上也有差别。
 
@@ -97,7 +97,7 @@ s_{i,c}=&\;\max_{\Delta\in\{-2,0,2\}}g_{i,c}^{(\Delta)}.
 
 这条分数式比严格课内版多了负模板差分、自相关项和更明确的词首定位，因此对应本题 bonus 中“用 AI 重做频谱描述与检测”的主体版本。它保留可解释的谱模板结构，但已经不再是严格课堂工具。伪代码见附录算法~\ref{alg:course-filterbank}。
 
-图~\ref{fig:course-template-contrast} 展示了扩展模板法中真正参与判别的正负差分。前两列分别是原始 log-mel 段均值和 onset-centered 段均值的正负模板差，第三列是能量包络自相关的正负模板差。
+图~\ref{fig:course-template-contrast} 展示了 AI 重做版中真正参与判别的正负差分。前两列分别是原始 log-mel 段均值和 onset-centered 段均值的正负模板差，第三列是能量包络自相关的正负模板差。
 
 \begin{figure}[H]
     \centering
@@ -106,7 +106,7 @@ s_{i,c}=&\;\max_{\Delta\in\{-2,0,2\}}g_{i,c}^{(\Delta)}.
     \label{fig:course-template-contrast}
 \end{figure}
 
-图~\ref{fig:course-localization} 把扩展模板法的一次检测拆开看：先由 log-mel 能量估计 onset，再围绕 onset 取三个候选窗，最后对每个标签和偏移计算正负模板差分加自相关分数。
+图~\ref{fig:course-localization} 把 AI 重做版的一次检测拆开看：先由 log-mel 能量估计 onset，再围绕 onset 取三个候选窗，最后对每个标签和偏移计算正负模板差分加自相关分数。
 
 \begin{figure}[H]
     \centering

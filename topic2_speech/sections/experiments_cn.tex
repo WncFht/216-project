@@ -62,15 +62,15 @@
     \label{fig:strict-score-dist}
 \end{figure}
 
-\subsection{扩展模板法对照}
+\subsection{AI 重做版对照}
 
-严格课内版之外，本文把 \texttt{course\_filterbank\_corr} 作为扩展模板法的主要实现。它不是简单换一个分类器，而是重做前两步：先用 log-mel 与能量变化得到更稳的词首局部谱，再用正负模板差分和自相关完成检测。
+严格课内版之外，本文把 \texttt{course\_filterbank\_corr} 作为 AI 重做版的主要实现。它不是简单换一个分类器，而是重做前两步：先用 log-mel 与能量变化得到更稳的词首局部谱，再用正负模板差分和自相关完成检测。
 
 \begin{table}[H]
     \centering
     \small
     \setlength{\tabcolsep}{4pt}
-    \caption{严格课内版与 扩展模板法的整体比较}
+    \caption{严格课内版与 AI 重做版的整体比较}
     \label{tab:course-compare}
     \begin{tabular}{lccccc}
         \toprule
@@ -84,7 +84,7 @@
 
 \begin{table}[H]
     \centering
-    \caption{严格课内版与 扩展模板法的分标签 F1}
+    \caption{严格课内版与 AI 重做版的分标签 F1}
     \label{tab:course-per-label}
     \begin{tabular}{lcccc}
         \toprule
@@ -96,23 +96,23 @@
     \end{tabular}
 \end{table}
 
-扩展模板法的提升主要来自两点：它把搜索范围更精确地收到词首附近，也把局部窗里的正负模板差分显式算进去了。/z/ 的提升最大，说明持续摩擦音在 log-mel 局部模板和自相关线索里更稳定；/b/ 和 /d/ 的重叠仍然明显，短促爆破和对齐误差仍然会削弱模板证据。
+AI 重做版的提升主要来自两点：它把搜索范围更精确地收到词首附近，也把局部窗里的正负模板差分显式算进去了。/z/ 的提升最大，说明持续摩擦音在 log-mel 局部模板和自相关线索里更稳定；/b/ 和 /d/ 的重叠仍然明显，短促爆破和对齐误差仍然会削弱模板证据。
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.95\textwidth]{figures/mswc_course_gbdz_75w_cap40_5_5/letter_examples.png}
-    \caption{扩展模板法对应的四个代表样本。}
+    \caption{AI 重做版对应的四个代表样本。}
     \label{fig:ext-examples}
 \end{figure}
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.90\textwidth]{figures/mswc_course_gbdz_75w_cap40_5_5/template_grid.png}
-    \caption{扩展模板法使用的平均 log-mel 模板视角。它展示的是每类训练样本的平均谱图，不等同于正负差分模板，但能帮助观察四类词首能量分布。}
+    \caption{AI 重做版使用的平均 log-mel 模板视角。它展示的是每类训练样本的平均谱图，不等同于正负差分模板，但能帮助观察四类词首能量分布。}
     \label{fig:ext-template-grid}
 \end{figure}
 
-图~\ref{fig:course-score-dist} 把扩展模板法四个标签的测试得分分布单独列出。相比严格课内版，/z/ 的正负样本分离最明显；/g/、/b/、/d/ 仍然有重叠，这解释了为什么扩展模板法提升明显但没有完全解决爆破音之间的混淆。
+图~\ref{fig:course-score-dist} 把 AI 重做版四个标签的测试得分分布单独列出。相比严格课内版，/z/ 的正负样本分离最明显；/g/、/b/、/d/ 仍然有重叠，这解释了为什么 AI 重做版提升明显但没有完全解决爆破音之间的混淆。
 
 \begin{figure}[H]
     \centering

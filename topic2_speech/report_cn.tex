@@ -23,21 +23,21 @@
 \setlength{\parskip}{0.5em}
 \setlength{\parindent}{2em}
 \captionsetup{font=small}
-\author{Heng Qiao}
+\author{方皓天 \quad 袁子恒}
 
 \ifPDFTeX
   \AtBeginDocument{\begin{CJK*}{UTF8}{gbsn}}
   \AtEndDocument{\end{CJK*}}
 \fi
 
-\title{基于 MSWC English 精确首浊辅音子集的 /g/、/b/、/d/、/z/ 检测：课堂模板法、扩展模板法与案例分析\\\large VE216 Project Topic 2 重构版}
+\title{英语首浊辅音的频谱分析与检测\\\large 基于短时 FFT 模板与 AI 重做方法}
 \date{2026年4月29日}
 
 \begin{document}
 \maketitle
 
 \begin{abstract}
-本文把 VE216 Project Topic 2 重构为一个更清晰的首浊辅音检测任务。数据只保留首字母为 \texttt{g/b/d/z} 且首个非元音音素严格匹配 \texttt{G/B/D/Z} 的单词；在本地 MSWC English 中，/z/ 最多只有 75 个满足条件且有 train/dev/test 音频的词，因此最终取每类 75 个词，共 300 个词、6796 条语音。方法上，正文先讲严格课内版 \texttt{strict\_course\_fft}：短时分帧、FFT 幅度谱、最大能量块、归一化相关和滑窗最大值；再把 \texttt{course\_filterbank\_corr} 明确作为扩展模板法，用 log-mel、onset 定位、正负模板和自相关重做频谱检测；最后用 \texttt{mlp\_ai} 和 \texttt{cnn\_ai} 作神经网络对照。
+我们选择 VE216 Project Topic 2 中的语音分析题目，研究英语单词开头浊辅音 /g/、/b/、/d/、/z/ 的频谱特征与自动检测。数据来自 MSWC English，只保留首字母属于 \texttt{g/b/d/z} 且首个非元音音素严格对应 \texttt{G/B/D/Z} 的单词；受 /z/ 类候选词数量限制，最终每类取 75 个词，共 300 个词、6796 条语音。我们先实现基于短时 FFT 幅度谱和归一化相关的检测方案，再用 \texttt{course\_filterbank\_corr} 作为 AI 重做方法，引入 log-mel、onset 定位、正负模板和自相关；最后用 MLP 和 CNN 作为神经网络对照。
 \end{abstract}
 
 \input{sections/problem_definition_cn.tex}
