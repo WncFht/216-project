@@ -1,12 +1,4 @@
-\RequirePackage{iftex}
-\ifPDFTeX
-  \documentclass[11pt,a4paper]{article}
-  \usepackage[utf8]{inputenc}
-  \usepackage[T1]{fontenc}
-  \usepackage{CJKutf8}
-\else
-  \documentclass[11pt,a4paper]{ctexart}
-\fi
+\documentclass[11pt,a4paper]{article}
 \usepackage[margin=1in]{geometry}
 \usepackage{amsmath,amssymb}
 \usepackage{graphicx}
@@ -18,40 +10,40 @@
 \usepackage{hyperref}
 \usepackage{xcolor}
 \usepackage{caption}
+\usepackage{microtype}
 
 \hypersetup{colorlinks=true,linkcolor=blue,urlcolor=blue,citecolor=blue}
-\setlength{\parskip}{0.5em}
-\setlength{\parindent}{2em}
+\setlength{\parskip}{0.45em}
+\setlength{\parindent}{1.5em}
 \captionsetup{font=small}
+\sloppy
+
+\title{Detecting Initial /g/, /b/, /d/, and /z/ in MSWC English:\\
+\large A Course-Constrained Spectral Template Method with Extended Baselines}
 \author{Heng Qiao}
-
-\ifPDFTeX
-  \AtBeginDocument{\begin{CJK*}{UTF8}{gbsn}}
-  \AtEndDocument{\end{CJK*}}
-\fi
-
-\title{基于 MSWC English 精确首浊辅音子集的 /g/、/b/、/d/、/z/ 检测：课堂模板法、扩展模板法与案例分析\\\large VE216 Project Topic 2 重构版}
-\date{2026年4月29日}
+\date{April 29, 2026}
 
 \begin{document}
 \maketitle
 
 \begin{abstract}
-本文把 VE216 Project Topic 2 重构为一个更清晰的首浊辅音检测任务。数据只保留首字母为 \texttt{g/b/d/z} 且首个非元音音素严格匹配 \texttt{G/B/D/Z} 的单词；在本地 MSWC English 中，/z/ 最多只有 75 个满足条件且有 train/dev/test 音频的词，因此最终取每类 75 个词，共 300 个词、6796 条语音。方法上，正文先讲严格课内版 \texttt{strict\_course\_fft}：短时分帧、FFT 幅度谱、最大能量块、归一化相关和滑窗最大值；再把 \texttt{course\_filterbank\_corr} 明确作为扩展模板法，用 log-mel、onset 定位、正负模板和自相关重做频谱检测；最后用 \texttt{mlp\_ai} 和 \texttt{cnn\_ai} 作神经网络对照。
+This report reformulates VE216 Project Topic 2 as a controlled initial-consonant detection problem. From MSWC English, the subset keeps only words whose first letter is \texttt{g}, \texttt{b}, \texttt{d}, or \texttt{z} and whose first non-vowel ARPABET phone is the matching consonant. The resulting corpus contains 60 words and 3000 utterances. The main method, \texttt{strict\_course\_fft}, uses short-time framing, FFT magnitude spectra, maximum-energy blocks, normalized correlation, and a sliding maximum score. It reaches 0.343 exact-match accuracy on the four-way test set. An extended template method, \texttt{course\_filterbank\_corr}, adds log-mel localization, positive-negative templates, and envelope autocorrelation, raising exact-match accuracy to 0.550. A feature MLP reaches 0.527, while a small CNN reaches 0.320. The results show that /z/ is the easiest class because its frication persists over time, while /g/ is the hardest because its burst is short and sensitive to alignment. The main value of the study is an interpretable signal-processing pipeline that makes the acoustic evidence visible before comparing stronger baselines.
 \end{abstract}
 
-\input{sections/problem_definition_cn.tex}
-\input{sections/literature_review_cn.tex}
-\input{sections/data_reconstruction_cn.tex}
-\input{sections/theory_and_course_method_cn.tex}
-\input{sections/case_analysis_cn.tex}
-\input{sections/experiments_cn.tex}
-\input{sections/ai_baselines_cn.tex}
-\input{sections/discussion_cn.tex}
-\input{sections/conclusion_cn.tex}
+\noindent\textbf{Keywords:} speech analysis; voiced consonants; short-time Fourier transform; template matching; keyword spotting; MSWC.
+
+\input{sections/problem_definition_en.tex}
+\input{sections/literature_review_en.tex}
+\input{sections/data_reconstruction_en.tex}
+\input{sections/theory_and_course_method_en.tex}
+\input{sections/case_analysis_en.tex}
+\input{sections/experiments_en.tex}
+\input{sections/ai_baselines_en.tex}
+\input{sections/discussion_en.tex}
+\input{sections/conclusion_en.tex}
 
 \appendix
-\input{sections/appendix_algorithms_cn.tex}
+\input{sections/appendix_algorithms_en.tex}
 
 \begin{thebibliography}{99}
 \bibitem{davis1980}
@@ -62,9 +54,6 @@ L. R. Rabiner, ``A Tutorial on Hidden Markov Models and Selected Applications in
 
 \bibitem{wilkinson2002}
 N. J. Wilkinson and M. J. Russell, ``Improved Phone Recognition on TIMIT Using Formant Frequency Data and Confidence Measures,'' in \textit{Proc. ICSLP 2002}. \url{https://www.isca-archive.org/icslp_2002/wilkinson02_icslp.html}.
-
-\bibitem{mazumder2021mswc}
-M. Mazumder \textit{et al.}, ``Multilingual Spoken Words Corpus,'' in \textit{Proc. NeurIPS Datasets and Benchmarks}, 2021. \url{https://datasets-benchmarks-proceedings.neurips.cc/paper/2021/hash/fe131d7f5a6b38b23cc967316c13dae2-Abstract-round2.html}.
 
 \bibitem{chen2014kws}
 G. Chen, C. Parada, and G. Heigold, ``Small-Footprint Keyword Spotting using Deep Neural Networks,'' in \textit{Proc. ICASSP 2014}. \url{https://research.google/pubs/small-footprint-keyword-spotting-using-deep-neural-networks/}.

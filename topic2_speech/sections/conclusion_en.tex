@@ -1,0 +1,7 @@
+\section{Conclusion}
+
+The study rebuilds VE216 Topic 2 as a pronunciation-filtered initial-consonant detection task over /g/, /b/, /d/, and /z/. The resulting MSWC English subset contains 60 words and 3000 utterances with balanced train, development, and test splits.
+
+The course-constrained method, \texttt{strict\_course\_fft}, uses only short-time FFT magnitude spectra and normalized correlation. With a three-frame block selected on the development set and templates re-estimated from train+development data, it reaches 0.343 exact-match accuracy. The extended template method, \texttt{course\_filterbank\_corr}, improves exact-match accuracy to 0.550 by adding log-mel onset localization, positive-negative templates, and envelope autocorrelation. The MLP reaches 0.527, while the CNN reaches 0.320.
+
+The class-level pattern is consistent across the analysis: /z/ is easiest because its frication is longer and more stable, and /g/ is hardest because its useful burst evidence is brief and alignment-sensitive. The final comparison supports the main design choice of the report: start with an interpretable spectral template method, then use stronger baselines to measure what the extra modeling buys.

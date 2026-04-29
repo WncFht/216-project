@@ -1,11 +1,57 @@
-\section{问题定义与报告主线}
+\section{问题定义、设置与评价指标}
 
-设输入语音为 $x_i$，标签为 $y_i \in \{0,1\}^4$，对应集合
+设第 $i$ 条语音为 $x_i[n]$，采样率统一为 $16$ kHz，长度统一到 $1$ s。标签集合为
 \[
-C=\{g,b,d,z\}.
+C=\{g,b,d,z\}, \qquad y_i\in\{0,1\}^{|C|}.
 \]
-当前数据集是单标签四分类，每个样本恰好属于四类中的一类。为了便于和不同方法对接，代码仍保留一对多接口：先为每个标签输出分数 $s_{i,c}$，再由阈值或 $\arg\max$ 给出预测。
+当前数据集是单标签四分类，每个样本只有一个首浊辅音标签。代码保留一对多接口，是为了让模板法、MLP 和 CNN 用同一套输出格式：每个方法先给出分数向量 $s_i\in\mathbb{R}^{|C|}$，再解码成预测标签 $\hat y_i$。由于当前样本都满足 $\sum_c y_{i,c}=1$，正式评测时使用 exclusive decoding，也就是
+\[
+\hat c_i=\arg\max_{c\in C}s_{i,c},\qquad
+\hat y_{i,c}=\mathbf{1}[c=\hat c_i].
+\]
+阈值仍然会在 dev 集上估计并导出，主要用于保留一对多接口；测试表里的结果按单标签四分类解码。
 
-这份报告的顺序是固定的。先讲严格课内版，因为它最接近课堂工具，也最适合说明题目本身；再讲课外扩展版，因为它确实更强，但边界已经超出课堂；最后再把 AI 基线单独放到后面，不让它抢走主线。
+所有方法使用同一份 train/dev/test 划分。train 只用于估计模板或训练模型；dev 只用于选择超参数、阈值和早停；test 只在最后计算指标。本文没有人工切分 phone segment，所以所有方法都必须从整词音频里自己找到词首附近的证据。
 
-需要先说明一点：当前 \path{build/mswc_course_gbdz_local_patch_v1} 目录保留的是整套实验结果，但其中 \texttt{course\_filterbank\_corr} 是课外扩展版，不是严格课内版。正文里如果提到“课堂方法”，指的是 \texttt{strict\_course\_fft}。
+\subsection{本文使用的测试指标}
+
+记测试集大小为 $N$，标签数为 $K=|C|$。label-wise accuracy 按标签位逐一比较：
+\[
+\mathrm{LabelAcc}
+=\frac{1}{NK}\sum_{i=1}^{N}\sum_{c\in C}\mathbf{1}[\hat y_{i,c}=y_{i,c}].
+\]
+它等价于 $1$ 减去 Hamming loss。这个指标会同时奖励真阳性和真阴性，所以在单标签任务里数值会高于 exact-match。
+
+exact-match accuracy 要求整条样本的标签向量完全一致：
+\[
+\mathrm{ExactMatch}
+=\frac{1}{N}\sum_{i=1}^{N}\mathbf{1}[\hat y_i=y_i].
+\]
+在本文的一热标签设置下，它就是普通四分类准确率，也是最直接的主指标。
+
+对每个标签 $c$，先定义
+\[
+P_c=\frac{TP_c}{TP_c+FP_c},\qquad
+R_c=\frac{TP_c}{TP_c+FN_c},\qquad
+F1_c=\frac{2P_cR_c}{P_c+R_c}.
+\]
+macro-F1 是四个标签 F1 的平均：
+\[
+\mathrm{MacroF1}=\frac{1}{K}\sum_{c\in C}F1_c.
+\]
+它不按样本数加权，适合观察 /g/、/b/、/d/、/z/ 是否有某一类被明显牺牲。
+
+micro-F1 先把所有标签位的 $TP$、$FP$、$FN$ 汇总，再计算 F1：
+\[
+\mathrm{MicroF1}
+=\frac{2\sum_c TP_c}{2\sum_c TP_c+\sum_c FP_c+\sum_c FN_c}.
+\]
+samples-F1 则先在每条样本上算 F1，再对样本取平均：
+\[
+\mathrm{SamplesF1}
+=\frac{1}{N}\sum_{i=1}^{N}
+\frac{2|Y_i\cap \hat Y_i|}{|Y_i|+|\hat Y_i|}.
+\]
+因为本文的真实标签和预测标签都恰好选一个类别，micro-F1、samples-F1 和 exact-match 会给出相同数值。报告仍保留这几个指标，是为了和代码的一对多评测接口一致。
+
+这份报告的顺序是固定的。先讲严格课内版，因为它最接近课堂工具，也最适合说明题目本身；再讲扩展模板法，因为它用更强的频谱表示和局部检测重做了题目要求的前两步；最后再把 MLP/CNN 神经网络对照放到后面，不让分数表抢走主线。当前 \path{build/mswc_course_gbdz_75w_cap40_5_5} 目录保留的是整套实验结果，其中 \texttt{course\_filterbank\_corr} 是扩展模板法，不是严格课内版。正文里如果提到“课堂方法”，指的是 \texttt{strict\_course\_fft}。

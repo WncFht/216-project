@@ -1,0 +1,7 @@
+\section{Discussion and Limitations}
+
+The reconstructed task separates three roles. The strict FFT template method demonstrates what the course-level tools can explain. The extended template method measures how much accuracy improves after adding onset localization, contrastive templates, and autocorrelation. The MLP and CNN provide learned baselines for comparison.
+
+The main limitation is that the input remains a whole-word recording rather than a manually segmented phone. The strict method therefore relies on sliding-window search, and short stop bursts can be missed when the chosen block is slightly misaligned. This affects /g/ and /d/ most strongly. /z/ benefits from longer frication, so it gives the cleanest score separation under both template methods.
+
+These results argue for a layered evaluation. A higher score alone does not explain which acoustic cue the method used. The strict template method gives the clearest view of the local spectral evidence; the extended method improves recognition by adding localization and contrastive statistics; the learned baselines show that more flexible models are not automatically better on a small, onset-sensitive corpus.

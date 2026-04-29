@@ -1,68 +1,124 @@
-\section{理论推导与严格课内方法}
+\section{理论推导与两种模板方法}
 
-\subsection{从波形到短时 FFT 模板}
+\subsection{严格课内版：短时 FFT 模板}
 
-严格课内版只用四步：短时分帧、FFT、局部块平均、归一化相关。设第 $i$ 个样本的波形为 $x_i[n]$，帧长 $L=20$ ms，帧移 $H=10$ ms，FFT 点数 $N=512$。第 $m$ 帧的频谱可写成
+\texttt{strict\_course\_fft} 的模型假设很直接：首浊辅音的信息集中在词首附近的一个短时片段里，不同类别在局部幅度谱形状上有可区分的原型。录音音量、说话人和词尾元音会引入变化，所以方法只比较归一化后的局部谱形，不直接依赖整词能量。
+
+设第 $i$ 个样本的波形为 $x_i[n]$，帧长 $L=20$ ms，帧移 $H=10$ ms，FFT 点数 $N=512$。第 $m$ 帧的频谱写成
 \[
-X_{i,m}[k] = \sum_{n=0}^{L-1} x_i[n+mH] e^{-j2\pi kn/N},\qquad k=0,\dots,N-1.
+X_{i,m}[k] = \sum_{n=0}^{L-1} x_i[n+mH]w[n]e^{-j2\pi kn/N},
+\qquad k=0,\dots,N-1,
 \]
-
-因为词首辅音往往只占很短的一段时间，所以不能直接看整词平均谱，而要在整词上滑动一个短时块。设每个块包含连续 $M$ 帧，则块描述子定义为
+其中 $w[n]$ 是 Hamming 窗。只保留单边幅度谱，并先对每帧除以该帧最大幅度。若一个候选块从第 $r$ 帧开始、包含 $M$ 帧，则块描述子为
 \[
 P_i^{(r)}[k]
-=
-\frac{1}{M}\sum_{m=0}^{M-1}
-\frac{|X_{i,r+m}[k]|}{\max_{\kappa}|X_{i,r+m}[\kappa]|}.
+=\frac{1}{M}\sum_{m=0}^{M-1}
+\frac{|X_{i,r+m}[k]|}{\max_{\kappa}|X_{i,r+m}[\kappa]|},
+\qquad k=0,\dots,N/2.
 \]
-这里先按帧归一化，再在块内平均，是为了减小录音音量差异，把重点放在谱形而不是绝对能量上。
+最后对 $P_i^{(r)}$ 做 $L_2$ 归一化。这个处理把幅度差异压下去，保留的是短时频谱轮廓。
 
-模板不再只由四个案例词直接给出，而是先由训练集估计块长，再在最终选定的块长上重估类别模板。对每个标签 $c$，先在每条正样本里找最大能量块，记对应描述子为 $P_i^{(\star)}$；再在该标签的训练/开发样本上取平均，得到
+模板由训练数据估计。对每个标签 $c$，先在每条正样本里找能量最大的 $M$ 帧块，记为 $P_i^{(\star)}$；再取平均并归一化：
 \[
-T_c[k] = \frac{1}{N_c}\sum_{i:y_i=c} P_i^{(\star)}[k].
+T_c=\frac{\sum_{i:y_i=c}P_i^{(\star)}}
+{\left\|\sum_{i:y_i=c}P_i^{(\star)}\right\|_2}.
 \]
-最后再做一次 $L_2$ 归一化。当前实验会先在 dev 集上从 $M\in\{3,4,5,6\}$ 中选取最优块长度，最终选中的是 $M=3$，然后用 train+dev 的同类样本重估最终模板。这样得到的模板不是黑盒参数，而是课堂上能直接解释的局部频谱原型。
+当前实验先在 dev 集上从 $M\in\{3,4,5,6\}$ 中选择块长，扩大到 75 词/类后选中 $M=5$，再用 train+dev 的同类样本重估最终模板。这个过程只用分帧、FFT、平均和归一化相关，属于严格课内边界。
 
-\subsection{模板长什么样}
+检测时，对测试样本的所有候选块做同样的描述，并计算
+\[
+\rho_{i,c}^{(r)}
+=\frac{\langle P_i^{(r)},T_c\rangle}
+{\|P_i^{(r)}\|_2\|T_c\|_2},
+\qquad
+s_{i,c}=\max_r\rho_{i,c}^{(r)}.
+\]
+单标签四分类下，预测类别就是 $\arg\max_c s_{i,c}$。这条链路的伪代码放在附录算法~\ref{alg:strict-course}。
 
 图~\ref{fig:strict-template} 展示了严格课内版当前使用的模板构造结果。左边是与类别均值最接近的代表性训练样本块，右边是对应标签的归一化均值模板曲线。
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.95\textwidth]{figures/mswc_course_gbdz_local_patch_v1/strict_course_template_construction.png}
+    \includegraphics[width=0.95\textwidth]{figures/mswc_course_gbdz_75w_cap40_5_5/strict_course_template_construction.png}
     \caption{严格课内版的模板构造：先取最大能量块，再对同类 train+dev 样本求均值模板。}
     \label{fig:strict-template}
 \end{figure}
 
-这张图比较重要，因为它把“模板”变成了可见的对象。/z/ 的高频摩擦能量更连续，/b/、/d/、/g/ 的起始爆破更短，模板差异主要就落在这些局部区间里。
-
-\subsection{互相关如何扫过整词}
-
-检测时，对测试样本的所有候选块做同样的描述，再和模板做归一化内积：
-\[
-\rho_{i,c}^{(r)}
-=
-\frac{\langle P_i^{(r)},T_c\rangle}
-{\|P_i^{(r)}\|_2\|T_c\|_2}.
-\]
-最终分数取整词范围内的最大值
-\[
-s_{i,c}=\max_r \rho_{i,c}^{(r)}.
-\]
-如果是单标签四分类，就直接取 $\arg\max_c s_{i,c}$。如果保留一对多接口，也可以再回到 dev 集上选阈值。本文主线用的是单标签四分类，所以正文里更关心最大分数对应哪一类，而不是每类是否过阈值。
-
-图~\ref{fig:strict-corr} 给出了这一过程的可视化：上图是波形，中间是最匹配的 3 帧块，下图是四个模板在所有候选起点上的相关分数。它对应的就是“先找局部证据，再看这段证据像哪一个模板”。
+图~\ref{fig:strict-corr} 给出了互相关搜索过程：上图是波形，中间是最匹配的 5 帧块，下图是四个模板在所有候选起点上的相关分数。它对应的就是先找局部证据，再看这段证据像哪一个模板。
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.95\textwidth]{figures/mswc_course_gbdz_local_patch_v1/strict_course_correlation_demo.png}
+    \includegraphics[width=0.95\textwidth]{figures/mswc_course_gbdz_75w_cap40_5_5/strict_course_correlation_demo.png}
     \caption{严格课内版的互相关搜索：先扫候选块，再取每个标签的最大相关分数。}
     \label{fig:strict-corr}
 \end{figure}
 
+\subsection{扩展模板法：filterbank 正负模板与自相关}
+
+\texttt{course\_filterbank\_corr} 仍然是模板法，但它加入了三件额外设计：用 mel filterbank 降维，用能量变化定位词首局部窗，并为每个标签同时建正模板和负模板。它的模型假设是：真正有用的证据主要在词首附近；某个标签不仅要像自己的正样本，也要不像其他三个标签；/z/ 这类持续摩擦音和 /g/、/b/、/d/ 这类短促爆破音，在局部能量包络的自相关上也有差别。
+
+先用 $25$ ms 帧长、$10$ ms 帧移计算功率谱，再经过 $40$ 个 mel 三角滤波器得到 log-mel 帧向量
+\[
+L_i[m,q]=\log\left(\sum_k |X_{i,m}[k]|^2 B_q[k]+\epsilon\right),
+\qquad q=1,\dots,40.
+\]
+帧能量定义为
+\[
+e_i[m]=\log\left(\frac{1}{40}\sum_q \exp L_i[m,q]+\epsilon\right).
+\]
+代码先对 $e_i[m]$ 做 5 帧滑动平均，再用开头若干帧的中位数作基线。第一个超过基线加 $0.22$ 的位置作为 onset 估计 $o_i$。候选窗长度为 16 帧，包含 onset 前 2 帧，并额外考察 $\Delta\in\{-2,0,2\}$ 三个偏移：
+\[
+W_i^{(\Delta)}=
+L_i[o_i-2+\Delta: o_i-2+\Delta+15,:].
+\]
+
+每个候选窗被切成 $S=3$ 段。方法同时保留原始段均值和减去前 2 帧基线后的段均值，拼成局部频谱向量
+\[
+\phi_i^{(\Delta)}=
+\left[
+\mu_1(W),\mu_2(W),\mu_3(W),
+\mu_1(W-\bar W_{\mathrm{pre}}),\mu_2(W-\bar W_{\mathrm{pre}}),\mu_3(W-\bar W_{\mathrm{pre}})
+\right].
+\]
+这里每个 $\mu_s$ 都是 40 维 mel 均值，所以 $\phi_i^{(\Delta)}\in\mathbb{R}^{240}$。另外，从同一个窗的能量包络计算 24 阶归一化自相关，记为 $a_i^{(\Delta)}$。
+
+对每个标签 $c$，训练集会产生四个模板：局部频谱正模板 $P_c^+$、局部频谱负模板 $P_c^-$、自相关正模板 $A_c^+$ 和自相关负模板 $A_c^-$。它们分别是该标签正样本和负样本特征的平均。测试时先计算三组候选偏移的分数，再取最大值：
+\[
+\begin{aligned}
+g_{i,c}^{(\Delta)}=&\;0.65\left[
+\cos(\phi_i^{(\Delta)},P_c^+)-\cos(\phi_i^{(\Delta)},P_c^-)
+\right]\\
+&+0.35\left[
+\cos(a_i^{(\Delta)},A_c^+)-\cos(a_i^{(\Delta)},A_c^-)
+\right],\\
+s_{i,c}=&\;\max_{\Delta\in\{-2,0,2\}}g_{i,c}^{(\Delta)}.
+\end{aligned}
+\]
+
+这条分数式比严格课内版多了负模板差分、自相关项和更明确的词首定位，因此对应本题 bonus 中“用 AI 重做频谱描述与检测”的主体版本。它保留可解释的谱模板结构，但已经不再是严格课堂工具。伪代码见附录算法~\ref{alg:course-filterbank}。
+
+图~\ref{fig:course-template-contrast} 展示了扩展模板法中真正参与判别的正负差分。前两列分别是原始 log-mel 段均值和 onset-centered 段均值的正负模板差，第三列是能量包络自相关的正负模板差。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.98\textwidth]{figures/mswc_course_gbdz_75w_cap40_5_5/course_filterbank_template_contrast.png}
+    \caption{\texttt{course\_filterbank\_corr} 的正负模板差分。颜色越偏暖，说明该区域更接近该类正样本；颜色越偏冷，说明它更像负样本。}
+    \label{fig:course-template-contrast}
+\end{figure}
+
+图~\ref{fig:course-localization} 把扩展模板法的一次检测拆开看：先由 log-mel 能量估计 onset，再围绕 onset 取三个候选窗，最后对每个标签和偏移计算正负模板差分加自相关分数。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\textwidth]{figures/mswc_course_gbdz_75w_cap40_5_5/course_filterbank_localization_demo.png}
+    \caption{\texttt{course\_filterbank\_corr} 的局部定位与候选偏移打分示例。}
+    \label{fig:course-localization}
+\end{figure}
+
 \subsection{MATLAB 对应实现}
 
-这套严格课内方法在 MATLAB 里对应 \path{src/matlab_course_template_detector.m} 和 \path{src/matlab_course_spectrum_demo.m}。核心打分式子就是一行：
+严格课内方法在 MATLAB 里对应 \path{src/matlab_course_template_detector.m} 和 \path{src/matlab_course_spectrum_demo.m}。核心打分式子就是一行：
 \[
 \texttt{score}=\frac{\texttt{mag}^\top \texttt{template}}{\|\texttt{mag}\|_2\|\texttt{template}\|_2}.
 \]
-\path{src/matlab_case_demo.m} 则负责把四个案例音频逐条画出来，方便直接看波形和标签分数。这里的 MATLAB demo 主要是把课堂思路画清楚；正式评测里，Python 版本会先在 dev 上选块长，再把 train+dev 的类别样本重估成最终模板。
+\path{src/matlab_case_demo.m} 负责把四个案例音频逐条画出来，方便直接看波形和标签分数。这里的 MATLAB demo 主要是把课堂思路画清楚；正式评测里，Python 版本会先在 dev 上选块长，再把 train+dev 的类别样本重估成最终模板。

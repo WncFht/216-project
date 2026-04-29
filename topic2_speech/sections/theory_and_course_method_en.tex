@@ -1,0 +1,119 @@
+\section{Methods}
+
+\subsection{Course-constrained short-time FFT template method}
+
+\texttt{strict\_course\_fft} assumes that the initial consonant can be represented by a short local magnitude-spectrum prototype. Speaker identity, recording level, and the following vowel all introduce variation, so the method compares normalized spectral shape rather than raw energy.
+
+For sample $i$, use frame length $L=20$ ms, hop size $H=10$ ms, and $N=512$ FFT points. The spectrum of frame $m$ is
+\[
+X_{i,m}[k] = \sum_{n=0}^{L-1} x_i[n+mH]w[n]e^{-j2\pi kn/N},
+\qquad k=0,\dots,N-1,
+\]
+where $w[n]$ is a Hamming window. Only the one-sided magnitude spectrum is kept. For a candidate block starting at frame $r$ and spanning $M$ frames, the descriptor is
+\[
+P_i^{(r)}[k]
+=\frac{1}{M}\sum_{m=0}^{M-1}
+\frac{|X_{i,r+m}[k]|}{\max_{\kappa}|X_{i,r+m}[\kappa]|},
+\qquad k=0,\dots,N/2.
+\]
+The block descriptor is then $L_2$-normalized.
+
+Templates are estimated from the training data. For each class $c$, the method first chooses the maximum-energy $M$-frame block from each positive sample and calls it $P_i^{(\star)}$. The class template is the normalized average
+\[
+T_c=\frac{\sum_{i:y_i=c}P_i^{(\star)}}
+{\left\|\sum_{i:y_i=c}P_i^{(\star)}\right\|_2}.
+\]
+The development set selects the block length from $M\in\{3,4,5,6\}$. The selected value is $M=3$, after which the final templates are re-estimated from train+development samples. This keeps the main method within the course boundary: framing, FFT, averaging, and normalized correlation.
+
+At test time, every candidate block is compared with every class template:
+\[
+\rho_{i,c}^{(r)}
+=\frac{\langle P_i^{(r)},T_c\rangle}
+{\|P_i^{(r)}\|_2\|T_c\|_2},
+\qquad
+s_{i,c}=\max_r\rho_{i,c}^{(r)}.
+\]
+The predicted class is $\arg\max_c s_{i,c}$. Appendix~\ref{alg:strict-course} gives the reproducible algorithm.
+
+Figure~\ref{fig:strict-template} shows the template construction. The left side gives representative training blocks near the class mean, while the right side gives the normalized average template for each consonant.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\textwidth]{figures/mswc_course_gbdz_local_patch_v1/strict_course_template_construction.png}
+    \caption{Template construction for \texttt{strict\_course\_fft}: maximum-energy blocks are extracted from train+development samples and averaged by class.}
+    \label{fig:strict-template}
+\end{figure}
+
+Figure~\ref{fig:strict-corr} shows one correlation search. The method scans local candidate blocks, computes one score curve per class, and keeps the maximum score for each label.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\textwidth]{figures/mswc_course_gbdz_local_patch_v1/strict_course_correlation_demo.png}
+    \caption{Correlation search in \texttt{strict\_course\_fft}. The classifier searches local blocks and assigns each class its best normalized-correlation score.}
+    \label{fig:strict-corr}
+\end{figure}
+
+\subsection{Extended template method with filterbanks and autocorrelation}
+
+\texttt{course\_filterbank\_corr} keeps the template-matching idea but expands the feature design. It uses log-mel filterbanks, estimates an onset window, builds both positive and negative templates for each label, and adds envelope autocorrelation. The method tests whether more precise localization and contrastive class information improve the same initial-consonant task.
+
+With 25 ms frames and 10 ms hops, the method computes a 40-bin log-mel vector
+\[
+L_i[m,q]=\log\left(\sum_k |X_{i,m}[k]|^2 B_q[k]+\epsilon\right),
+\qquad q=1,\dots,40.
+\]
+Frame energy is
+\[
+e_i[m]=\log\left(\frac{1}{40}\sum_q \exp L_i[m,q]+\epsilon\right).
+\]
+A five-frame moving average smooths $e_i[m]$. The onset $o_i$ is the first frame whose smoothed energy exceeds the initial median baseline by 0.22. The local window has 16 frames, starts two frames before the onset, and is evaluated under three offsets $\Delta\in\{-2,0,2\}$:
+\[
+W_i^{(\Delta)}=
+L_i[o_i-2+\Delta: o_i-2+\Delta+15,:].
+\]
+
+Each candidate window is split into $S=3$ segments. The feature vector concatenates raw segment means and segment means after subtracting the two-frame pre-onset baseline:
+\[
+\phi_i^{(\Delta)}=
+\left[
+\mu_1(W),\mu_2(W),\mu_3(W),
+\mu_1(W-\bar W_{\mathrm{pre}}),\mu_2(W-\bar W_{\mathrm{pre}}),\mu_3(W-\bar W_{\mathrm{pre}})
+\right].
+\]
+Each $\mu_s$ is 40-dimensional, so $\phi_i^{(\Delta)}\in\mathbb{R}^{240}$. The same window also yields a 24-lag normalized autocorrelation vector $a_i^{(\Delta)}$ from the energy envelope.
+
+For class $c$, the training set yields four templates: positive and negative spectral templates $P_c^+$ and $P_c^-$, plus positive and negative autocorrelation templates $A_c^+$ and $A_c^-$. The score for offset $\Delta$ is
+\[
+\begin{aligned}
+g_{i,c}^{(\Delta)}=&\;0.65\left[
+\cos(\phi_i^{(\Delta)},P_c^+)-\cos(\phi_i^{(\Delta)},P_c^-)
+\right]\\
+&+0.35\left[
+\cos(a_i^{(\Delta)},A_c^+)-\cos(a_i^{(\Delta)},A_c^-)
+\right],\\
+s_{i,c}=&\;\max_{\Delta\in\{-2,0,2\}}g_{i,c}^{(\Delta)}.
+\end{aligned}
+\]
+The extra terms improve accuracy but make the method less course-constrained. For that reason, this report treats it as an extended comparison rather than the primary classroom method. Appendix~\ref{alg:course-filterbank} gives the algorithm.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.98\textwidth]{figures/mswc_course_gbdz_local_patch_v1/course_filterbank_template_contrast.png}
+    \caption{Positive-negative template differences in \texttt{course\_filterbank\_corr}. Warm regions are closer to positive samples; cool regions are closer to negative samples.}
+    \label{fig:course-template-contrast}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\textwidth]{figures/mswc_course_gbdz_local_patch_v1/course_filterbank_localization_demo.png}
+    \caption{Onset localization and offset scoring in \texttt{course\_filterbank\_corr}.}
+    \label{fig:course-localization}
+\end{figure}
+
+\subsection{MATLAB correspondence}
+
+The course-constrained method maps to \path{src/matlab_course_template_detector.m} and \path{src/matlab_course_spectrum_demo.m}. The core score is the normalized inner product
+\[
+\texttt{score}=\frac{\texttt{mag}^\top \texttt{template}}{\|\texttt{mag}\|_2\|\texttt{template}\|_2}.
+\]
+\path{src/matlab_case_demo.m} visualizes the four case clips and their template scores. The MATLAB scripts show the course idea directly; the Python experiment adds development-set block selection and train+development template estimation for the formal test run.

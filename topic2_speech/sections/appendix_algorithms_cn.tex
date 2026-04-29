@@ -1,0 +1,81 @@
+\section{算法结构与伪代码}
+
+本附录把正文中的四个实现整理成可复现的结构。所有方法都使用相同的输入设置：音频统一为 $16$ kHz、1 s 单声道 WAV，标签集合为 $C=\{g,b,d,z\}$，train/dev/test 分别只承担训练、调参和最终测试职责。
+
+\subsection{\texttt{strict\_course\_fft}}
+\label{alg:strict-course}
+
+\textbf{模型与假设：} 每个首浊辅音可以由一个短时 FFT 幅度谱原型表示；最大能量块近似包含词首辅音的主要局部证据；归一化相关可以削弱音量差异。
+
+\textbf{伪代码：}
+\begin{enumerate}[nosep]
+    \item 对每条训练音频做 20 ms 分帧、10 ms 帧移和 512 点 FFT。
+    \item 对每个候选 $M$ 帧块计算归一化幅度谱描述子 $P_i^{(r)}$。
+    \item 在正样本中选最大能量块，得到 $P_i^{(\star)}$。
+    \item 对每个类别 $c$，平均同类 $P_i^{(\star)}$ 并归一化，得到模板 $T_c$。
+    \item 在 dev 集上从 $M\in\{3,4,5,6\}$ 选择 exact-match 最好的块长。
+    \item 用 train+dev 按选定块长重估模板。
+    \item 测试时滑动全部候选块，计算 $s_{i,c}=\max_r\cos(P_i^{(r)},T_c)$。
+    \item 输出 $\hat c_i=\arg\max_c s_{i,c}$。
+\end{enumerate}
+
+\subsection{\texttt{course\_filterbank\_corr}}
+\label{alg:course-filterbank}
+
+\textbf{模型与假设：} 词首附近的 log-mel 局部窗比整词平均谱更可靠；正负模板差分能减少类别间共享能量的干扰；能量包络自相关能补充持续摩擦和短促爆破之间的时间结构差异。
+
+\textbf{伪代码：}
+\begin{enumerate}[nosep]
+    \item 对音频做 25 ms 分帧、10 ms 帧移，计算 40 维 log-mel spectrogram。
+    \item 由帧能量的平滑曲线估计 onset $o_i$。
+    \item 取 $\Delta\in\{-2,0,2\}$ 三个候选偏移，得到 16 帧局部窗。
+    \item 对局部窗切成 3 段，拼接原始段均值和去基线后的段均值，得到 $\phi_i^{(\Delta)}$。
+    \item 对局部窗能量包络计算 24 阶归一化自相关，得到 $a_i^{(\Delta)}$。
+    \item 对每个类别 $c$，在 train 集上分别平均正样本和负样本，得到 $P_c^+$、$P_c^-$、$A_c^+$、$A_c^-$。
+    \item 对每个候选偏移计算 $0.65[\cos(\phi,P_c^+)-\cos(\phi,P_c^-)]+0.35[\cos(a,A_c^+)-\cos(a,A_c^-)]$。
+    \item 对三个偏移取最大值作为 $s_{i,c}$，最后输出 $\arg\max_c s_{i,c}$。
+\end{enumerate}
+
+\subsection{\texttt{mlp\_ai}}
+\label{alg:mlp-ai}
+
+\textbf{模型与假设：} MFCC 均值、方差、一阶差分统计和粗频带能量已经能概括整词里的主要声学差异；两层非线性网络可以学习这些统计特征到四个标签的映射。
+
+\textbf{结构：}
+\[
+62\rightarrow128\rightarrow64\rightarrow4.
+\]
+隐藏层激活函数为 ReLU，输出层用 sigmoid 概率。训练使用 Adam、early stopping 和 $L_2$ 正则，dev 集用于阈值选择，测试时按 $\arg\max$ 解码。
+
+\textbf{伪代码：}
+\begin{enumerate}[nosep]
+    \item 从每条音频提取 MFCC 统计、delta MFCC 统计和 10 维 band-energy。
+    \item 用 train 集均值和方差标准化特征。
+    \item 训练两层 MLP，优化四个标签的 binary cross entropy。
+    \item 在 dev 集上选择每个标签的阈值，同时保留 exclusive decoding。
+    \item 在 test 集输出四个标签概率，取最大概率类别作为预测。
+\end{enumerate}
+
+\subsection{\texttt{cnn\_ai}}
+\label{alg:cnn-ai}
+
+\textbf{模型与假设：} log-mel spectrogram 可以看成时间频率图像，卷积层可以从整词谱图中自动学习局部声学模式。这个假设不要求人工指定词首窗口，但需要足够数据让模型学会忽略无关位置。
+
+\textbf{结构：}
+\[
+\begin{aligned}
+&\mathrm{Conv}_{24}\rightarrow\mathrm{BN}\rightarrow\mathrm{ReLU}\rightarrow\mathrm{Pool}\\
+&\rightarrow\mathrm{Conv}_{48}\rightarrow\mathrm{BN}\rightarrow\mathrm{ReLU}\rightarrow\mathrm{Pool}\\
+&\rightarrow\mathrm{Conv}_{96}\rightarrow\mathrm{BN}\rightarrow\mathrm{ReLU}\rightarrow\mathrm{GlobalAvgPool}\\
+&\rightarrow\mathrm{FC}_{96}\rightarrow\mathrm{Dropout}\rightarrow\mathrm{FC}_{4}.
+\end{aligned}
+\]
+
+\textbf{伪代码：}
+\begin{enumerate}[nosep]
+    \item 提取整词 log-mel spectrogram，并用 train 集全局均值和方差标准化。
+    \item 将谱图作为单通道输入送入三层卷积网络。
+    \item 使用带正样本权重的 BCEWithLogitsLoss 训练，优化器为 AdamW。
+    \item 每个 epoch 后在 dev 集计算 macro-F1，并保留 dev macro-F1 最高的模型。
+    \item 在 test 集输出 sigmoid 概率，按 $\arg\max$ 得到最终类别。
+\end{enumerate}

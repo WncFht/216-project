@@ -1,0 +1,15 @@
+\section{Related Work}
+
+The task studied here is closer to local acoustic-event detection than to large-vocabulary speech recognition. The classifier only needs to decide which initial voiced consonant begins a short word. That makes short-time spectral analysis and template matching a useful starting point.
+
+\subsection{Short-time speech representations}
+
+Davis and Mermelstein showed that speech front ends gain stability by replacing raw waveforms with short-time parameterized spectra\cite{davis1980}. The usual pipeline frames the waveform over tens of milliseconds, applies a window, transforms each frame, and keeps the frequency-domain energy pattern. This representation preserves releases, frication, and vowel transitions while reducing sensitivity to raw waveform phase.
+
+Rabiner's HMM tutorial connects frame-level features with temporal modeling\cite{rabiner1989}. The relevant point for this report is that speech evidence moves over time. Even without using an HMM, an initial-consonant detector should search a short region near the beginning of the word rather than average the whole recording into one global descriptor.
+
+\subsection{Why consonants need local evidence}
+
+The four target classes have different time-frequency behavior. /g/, /b/, and /d/ are voiced stops with short releases and fast transitions. /z/ is a voiced fricative with longer high-frequency energy. Whole-word averaging can bury these cues under the following vowel and speaker variation. Wilkinson and Russell's TIMIT phone-recognition work also points to the value of local formant and boundary-related evidence for phone discrimination\cite{wilkinson2002}.
+
+For that reason, the main method starts with the tools closest to the course material: short-time FFT, local magnitude spectra, and normalized correlation. More complex baselines are useful only after the acoustic evidence has been made explicit.

@@ -8,7 +8,7 @@ import math
 import random
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Sequence, Tuple
+from typing import Dict, List, Sequence, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -17,7 +17,12 @@ import seaborn as sns
 import soundfile as sf
 from scipy.fft import dct
 from scipy.signal import get_window, resample_poly, stft
-from sklearn.metrics import accuracy_score, f1_score, hamming_loss, precision_recall_fscore_support
+from sklearn.metrics import (
+    accuracy_score,
+    f1_score,
+    hamming_loss,
+    precision_recall_fscore_support,
+)
 from sklearn.neural_network import MLPClassifier
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
@@ -42,7 +47,9 @@ DEFAULT_EXAMPLE_WORDS = {
     "d": "did",
     "z": "zero",
 }
-BAND_EDGES = np.array([0, 250, 500, 750, 1000, 1500, 2000, 3000, 4000, 5500, 8000], dtype=float)
+BAND_EDGES = np.array(
+    [0, 250, 500, 750, 1000, 1500, 2000, 3000, 4000, 5500, 8000], dtype=float
+)
 FILTERBANK_MELS = 40
 COURSE_AUTOCORR_LAGS = 24
 COURSE_WINDOW_FRAMES = 16
@@ -158,7 +165,9 @@ def mel_to_hz(m):
     return 700 * (10 ** (np.asarray(m) / 2595) - 1)
 
 
-def mel_filterbank(sr: int, n_fft: int, n_mels: int = 40, fmin: float = 50, fmax: float | None = None):
+def mel_filterbank(
+    sr: int, n_fft: int, n_mels: int = 40, fmin: float = 50, fmax: float | None = None
+):
     if fmax is None:
         fmax = sr / 2
     mels = np.linspace(hz_to_mel(fmin), hz_to_mel(fmax), n_mels + 2)
@@ -178,7 +187,9 @@ def mel_filterbank(sr: int, n_fft: int, n_mels: int = 40, fmin: float = 50, fmax
     return fb
 
 
-def frame_signal(x: np.ndarray, sr: int, frame_ms: float = 25, hop_ms: float = 10) -> np.ndarray:
+def frame_signal(
+    x: np.ndarray, sr: int, frame_ms: float = 25, hop_ms: float = 10
+) -> np.ndarray:
     frame_len = int(sr * frame_ms / 1000)
     hop = int(sr * hop_ms / 1000)
     if len(x) < frame_len:
@@ -199,7 +210,7 @@ def normalized_autocorrelation(x: np.ndarray, n_lags: int) -> np.ndarray:
     denom = float(np.dot(x, x)) + 1e-12
     corr = np.correlate(x, x, mode="full")
     center = len(x) - 1
-    values = corr[center:center + min(n_lags, len(x))] / denom
+    values = corr[center : center + min(n_lags, len(x))] / denom
     if len(values) < n_lags:
         values = np.pad(values, (0, n_lags - len(values)))
     return values.astype(np.float32)
@@ -245,10 +256,14 @@ def frame_energy_from_logmel(logmel: np.ndarray) -> np.ndarray:
     return np.log(np.mean(np.exp(logmel), axis=1) + 1e-12).astype(np.float32)
 
 
-def segment_mean_spectrum(patch: np.ndarray, segments: int = COURSE_SEGMENTS) -> np.ndarray:
+def segment_mean_spectrum(
+    patch: np.ndarray, segments: int = COURSE_SEGMENTS
+) -> np.ndarray:
     patch = np.asarray(patch, dtype=np.float32)
     parts = np.array_split(patch, int(max(1, segments)), axis=0)
-    return np.concatenate([part.mean(axis=0) for part in parts], axis=0).astype(np.float32)
+    return np.concatenate([part.mean(axis=0) for part in parts], axis=0).astype(
+        np.float32
+    )
 
 
 def detect_course_onset(logmel: np.ndarray) -> int:
@@ -274,7 +289,9 @@ def extract_course_patch(logmel: np.ndarray, onset_idx: int, shift: int = 0):
     envelope = frame_energy_from_logmel(patch)
     raw_segment = segment_mean_spectrum(patch, COURSE_SEGMENTS)
     centered_segment = segment_mean_spectrum(centered_patch, COURSE_SEGMENTS)
-    patch_vec = np.concatenate([raw_segment, centered_segment], axis=0).astype(np.float32)
+    patch_vec = np.concatenate([raw_segment, centered_segment], axis=0).astype(
+        np.float32
+    )
     patch_auto = normalized_autocorrelation(envelope, COURSE_AUTOCORR_LAGS)
     return patch_vec, patch_auto
 
@@ -305,17 +322,21 @@ def compute_representations(x: np.ndarray, sr: int):
         mask = (freqs >= lo) & (freqs < hi)
         bands.append(np.log(np.mean(mag[:, mask] ** 2) + 1e-12))
     band_vec = np.asarray(bands, dtype=np.float32)
-    stat = np.concatenate([
-        mfcc.mean(0),
-        mfcc.std(0),
-        delta.mean(0),
-        delta.std(0),
-        band_vec,
-    ]).astype(np.float32)
+    stat = np.concatenate(
+        [
+            mfcc.mean(0),
+            mfcc.std(0),
+            delta.mean(0),
+            delta.std(0),
+            band_vec,
+        ]
+    ).astype(np.float32)
     mean_spectrum = np.log(np.mean(mag**2, axis=0) + 1e-12).astype(np.float32)
     filterbank_spectrum = logmel.mean(axis=0).astype(np.float32)
     filterbank_envelope = logmel.mean(axis=1).astype(np.float32)
-    filterbank_autocorr = normalized_autocorrelation(filterbank_envelope, COURSE_AUTOCORR_LAGS)
+    filterbank_autocorr = normalized_autocorrelation(
+        filterbank_envelope, COURSE_AUTOCORR_LAGS
+    )
     return {
         "band": band_vec,
         "stat": stat,
@@ -349,7 +370,9 @@ def strict_frame_signal(x: np.ndarray, sr: int) -> np.ndarray:
     return frames
 
 
-def strict_block_descriptor(frames: np.ndarray, start_frame: int, block_frames: int = STRICT_BLOCK_FRAMES) -> np.ndarray:
+def strict_block_descriptor(
+    frames: np.ndarray, start_frame: int, block_frames: int = STRICT_BLOCK_FRAMES
+) -> np.ndarray:
     block = pad_or_trim_rows(frames, start_frame, block_frames)
     spec = np.abs(np.fft.fft(block, STRICT_NFFT, axis=1))[:, : STRICT_NFFT // 2 + 1]
     row_max = np.max(spec, axis=1, keepdims=True)
@@ -360,7 +383,9 @@ def strict_block_descriptor(frames: np.ndarray, start_frame: int, block_frames: 
     return descriptor.astype(np.float32)
 
 
-def strict_select_max_energy_descriptor(x: np.ndarray, sr: int, block_frames: int = STRICT_BLOCK_FRAMES):
+def strict_select_max_energy_descriptor(
+    x: np.ndarray, sr: int, block_frames: int = STRICT_BLOCK_FRAMES
+):
     frames = strict_frame_signal(x, sr)
     n_frames = frames.shape[0]
     n_starts = max(1, n_frames - block_frames + 1)
@@ -373,18 +398,24 @@ def strict_select_max_energy_descriptor(x: np.ndarray, sr: int, block_frames: in
         if block_energy > best_energy:
             best_energy = block_energy
             best_start = start
-            best_descriptor = strict_block_descriptor(frames, start, block_frames=block_frames)
+            best_descriptor = strict_block_descriptor(
+                frames, start, block_frames=block_frames
+            )
     return best_descriptor, best_start
 
 
-def strict_all_candidate_descriptors(x: np.ndarray, sr: int, block_frames: int = STRICT_BLOCK_FRAMES):
+def strict_all_candidate_descriptors(
+    x: np.ndarray, sr: int, block_frames: int = STRICT_BLOCK_FRAMES
+):
     frames = strict_frame_signal(x, sr)
     n_frames = frames.shape[0]
     n_starts = max(1, n_frames - block_frames + 1)
     matrix = np.zeros((n_starts, STRICT_NFFT // 2 + 1), dtype=np.float32)
     start_frames = np.arange(n_starts, dtype=np.int32)
     for start in range(n_starts):
-        matrix[start] = strict_block_descriptor(frames, start, block_frames=block_frames)
+        matrix[start] = strict_block_descriptor(
+            frames, start, block_frames=block_frames
+        )
     return matrix, start_frames
 
 
@@ -415,13 +446,17 @@ def fit_strict_course_bank(
             if int(target) != 1:
                 continue
             sr, x = load_wav(Path(path_val))
-            descriptor, start_frame = strict_select_max_energy_descriptor(x, sr, block_frames=block_frames)
+            descriptor, start_frame = strict_select_max_energy_descriptor(
+                x, sr, block_frames=block_frames
+            )
             descs.append(descriptor)
             rep_paths.append(str(path_val))
             rep_words.append(str(word_val))
             rep_starts.append(int(start_frame))
         if not descs:
-            raise ValueError(f"No positive training samples found for strict course label {lab}")
+            raise ValueError(
+                f"No positive training samples found for strict course label {lab}"
+            )
         desc_matrix = np.vstack(descs).astype(np.float32)
         template = desc_matrix.mean(axis=0)
         template = template / max(float(np.linalg.norm(template)), 1e-12)
@@ -453,7 +488,9 @@ def fit_strict_course_bank(
     }
 
 
-def score_strict_course_detector(paths: Sequence[str | Path], bank: Dict[str, np.ndarray]) -> np.ndarray:
+def score_strict_course_detector(
+    paths: Sequence[str | Path], bank: Dict[str, np.ndarray]
+) -> np.ndarray:
     scores = np.zeros((len(paths), len(bank["labels"])), dtype=np.float32)
     templates = np.asarray(bank["templates"], dtype=np.float32)
     block_frames = int(bank["cfg"].get("block_frames", STRICT_BLOCK_FRAMES))
@@ -511,7 +548,19 @@ def build_dataset(items: Sequence[Item], labels: Sequence[str], cache_path: Path
     if cache_path.exists():
         return dict(np.load(cache_path, allow_pickle=True))
     label_to_idx = {lab: i for i, lab in enumerate(labels)}
-    X_band, X_course_spec, X_course_auto, X_stat, X_cnn, Y, words, speakers, splits, paths, phones = [], [], [], [], [], [], [], [], [], [], []
+    (
+        X_band,
+        X_course_spec,
+        X_course_auto,
+        X_stat,
+        X_cnn,
+        Y,
+        words,
+        speakers,
+        splits,
+        paths,
+        phones,
+    ) = [], [], [], [], [], [], [], [], [], [], []
     for item in items:
         sr, x = load_wav(item.wav_path)
         rep = compute_representations(x, sr)
@@ -560,7 +609,9 @@ def choose_threshold(y_true: np.ndarray, scores: np.ndarray) -> float:
     return best_t
 
 
-def max_normalized_cross_correlation_rows(X: np.ndarray, template: np.ndarray) -> np.ndarray:
+def max_normalized_cross_correlation_rows(
+    X: np.ndarray, template: np.ndarray
+) -> np.ndarray:
     template = np.asarray(template, dtype=np.float32)
     template = template - float(np.mean(template))
     template_norm = float(np.linalg.norm(template)) + 1e-12
@@ -568,7 +619,9 @@ def max_normalized_cross_correlation_rows(X: np.ndarray, template: np.ndarray) -
     for i, row in enumerate(np.asarray(X, dtype=np.float32)):
         centered = row - float(np.mean(row))
         row_norm = float(np.linalg.norm(centered)) + 1e-12
-        corr = np.correlate(centered, template, mode="full") / (row_norm * template_norm)
+        corr = np.correlate(centered, template, mode="full") / (
+            row_norm * template_norm
+        )
         scores[i] = float(np.max(corr))
     return scores
 
@@ -576,7 +629,9 @@ def max_normalized_cross_correlation_rows(X: np.ndarray, template: np.ndarray) -
 def cosine_similarity_rows(X: np.ndarray, template: np.ndarray) -> np.ndarray:
     X = np.asarray(X, dtype=np.float32)
     template = np.asarray(template, dtype=np.float32)
-    denom = (np.linalg.norm(X, axis=1) + 1e-12) * (float(np.linalg.norm(template)) + 1e-12)
+    denom = (np.linalg.norm(X, axis=1) + 1e-12) * (
+        float(np.linalg.norm(template)) + 1e-12
+    )
     return ((X @ template) / denom).astype(np.float32)
 
 
@@ -584,7 +639,9 @@ def fit_course_detector(X_logmel_train: np.ndarray, Y_train: np.ndarray):
     sample_patch_features = []
     sample_autocorr_features = []
     for logmel in X_logmel_train:
-        patch_vec, patch_auto = extract_course_patch(logmel, detect_course_onset(logmel), shift=0)
+        patch_vec, patch_auto = extract_course_patch(
+            logmel, detect_course_onset(logmel), shift=0
+        )
         sample_patch_features.append(patch_vec)
         sample_autocorr_features.append(patch_auto)
     sample_patch_features = np.vstack(sample_patch_features)
@@ -601,10 +658,18 @@ def fit_course_detector(X_logmel_train: np.ndarray, Y_train: np.ndarray):
             raise ValueError(f"No positive training samples found for label index {j}")
         if not np.any(neg):
             raise ValueError(f"No negative training samples found for label index {j}")
-        patch_pos_templates.append(np.mean(sample_patch_features[pos], axis=0).astype(np.float32))
-        patch_neg_templates.append(np.mean(sample_patch_features[neg], axis=0).astype(np.float32))
-        autocorr_pos_templates.append(np.mean(sample_autocorr_features[pos], axis=0).astype(np.float32))
-        autocorr_neg_templates.append(np.mean(sample_autocorr_features[neg], axis=0).astype(np.float32))
+        patch_pos_templates.append(
+            np.mean(sample_patch_features[pos], axis=0).astype(np.float32)
+        )
+        patch_neg_templates.append(
+            np.mean(sample_patch_features[neg], axis=0).astype(np.float32)
+        )
+        autocorr_pos_templates.append(
+            np.mean(sample_autocorr_features[pos], axis=0).astype(np.float32)
+        )
+        autocorr_neg_templates.append(
+            np.mean(sample_autocorr_features[neg], axis=0).astype(np.float32)
+        )
     return (
         np.vstack(patch_pos_templates),
         np.vstack(patch_neg_templates),
@@ -624,13 +689,21 @@ def score_course_detector(
     for i, logmel in enumerate(X_logmel):
         patch_rows, auto_rows = extract_course_candidates(logmel)
         for j in range(patch_pos_templates.shape[0]):
-            patch_pos_scores = cosine_similarity_rows(patch_rows, patch_pos_templates[j])
-            patch_neg_scores = cosine_similarity_rows(patch_rows, patch_neg_templates[j])
-            auto_pos_scores = cosine_similarity_rows(auto_rows, autocorr_pos_templates[j])
-            auto_neg_scores = cosine_similarity_rows(auto_rows, autocorr_neg_templates[j])
-            candidate_scores = COURSE_CROSS_WEIGHT * (patch_pos_scores - patch_neg_scores) + COURSE_AUTOCORR_WEIGHT * (
-                auto_pos_scores - auto_neg_scores
+            patch_pos_scores = cosine_similarity_rows(
+                patch_rows, patch_pos_templates[j]
             )
+            patch_neg_scores = cosine_similarity_rows(
+                patch_rows, patch_neg_templates[j]
+            )
+            auto_pos_scores = cosine_similarity_rows(
+                auto_rows, autocorr_pos_templates[j]
+            )
+            auto_neg_scores = cosine_similarity_rows(
+                auto_rows, autocorr_neg_templates[j]
+            )
+            candidate_scores = COURSE_CROSS_WEIGHT * (
+                patch_pos_scores - patch_neg_scores
+            ) + COURSE_AUTOCORR_WEIGHT * (auto_pos_scores - auto_neg_scores)
             scores[i, j] = float(np.max(candidate_scores))
     return scores
 
@@ -664,10 +737,18 @@ def get_mlp_scores(model, X: np.ndarray) -> np.ndarray:
 
 
 def fit_thresholds(y_dev: np.ndarray, scores_dev: np.ndarray) -> np.ndarray:
-    return np.asarray([choose_threshold(y_dev[:, j].astype(int), scores_dev[:, j]) for j in range(y_dev.shape[1])], dtype=np.float32)
+    return np.asarray(
+        [
+            choose_threshold(y_dev[:, j].astype(int), scores_dev[:, j])
+            for j in range(y_dev.shape[1])
+        ],
+        dtype=np.float32,
+    )
 
 
-def predict_with_thresholds(scores: np.ndarray, thresholds: np.ndarray, exclusive: bool = False) -> np.ndarray:
+def predict_with_thresholds(
+    scores: np.ndarray, thresholds: np.ndarray, exclusive: bool = False
+) -> np.ndarray:
     scores = np.asarray(scores)
     if exclusive:
         pred = np.zeros_like(scores, dtype=int)
@@ -676,8 +757,12 @@ def predict_with_thresholds(scores: np.ndarray, thresholds: np.ndarray, exclusiv
     return (scores >= thresholds[None, :]).astype(int)
 
 
-def label_metrics(y_true: np.ndarray, y_pred: np.ndarray, labels: Sequence[str], method: str) -> pd.DataFrame:
-    p, r, f, s = precision_recall_fscore_support(y_true, y_pred, average=None, zero_division=0)
+def label_metrics(
+    y_true: np.ndarray, y_pred: np.ndarray, labels: Sequence[str], method: str
+) -> pd.DataFrame:
+    p, r, f, s = precision_recall_fscore_support(
+        y_true, y_pred, average=None, zero_division=0
+    )
     return pd.DataFrame(
         {
             "method": method,
@@ -690,19 +775,27 @@ def label_metrics(y_true: np.ndarray, y_pred: np.ndarray, labels: Sequence[str],
     )
 
 
-def summary_metrics(y_true: np.ndarray, y_pred: np.ndarray, labels: Sequence[str], method: str) -> Dict[str, float | str]:
+def summary_metrics(
+    y_true: np.ndarray, y_pred: np.ndarray, labels: Sequence[str], method: str
+) -> Dict[str, float | str]:
     return {
         "method": method,
         "label_wise_accuracy": float(1.0 - hamming_loss(y_true, y_pred)),
         "exact_match_accuracy": float(accuracy_score(y_true, y_pred)),
         "macro_f1": float(f1_score(y_true, y_pred, average="macro", zero_division=0)),
         "micro_f1": float(f1_score(y_true, y_pred, average="micro", zero_division=0)),
-        "samples_f1": float(f1_score(y_true, y_pred, average="samples", zero_division=0)),
-        "mean_positive_f1": float(np.mean(label_metrics(y_true, y_pred, labels, method)["f1"])),
+        "samples_f1": float(
+            f1_score(y_true, y_pred, average="samples", zero_division=0)
+        ),
+        "mean_positive_f1": float(
+            np.mean(label_metrics(y_true, y_pred, labels, method)["f1"])
+        ),
     }
 
 
-def build_example_rows(data: Dict[str, np.ndarray], labels: Sequence[str], preferred_words: Dict[str, str]):
+def build_example_rows(
+    data: Dict[str, np.ndarray], labels: Sequence[str], preferred_words: Dict[str, str]
+):
     rows = []
     for j, lab in enumerate(labels):
         mask = data["Y"][:, j] == 1
@@ -717,7 +810,12 @@ def build_example_rows(data: Dict[str, np.ndarray], labels: Sequence[str], prefe
     return rows
 
 
-def plot_letter_examples(data: Dict[str, np.ndarray], labels: Sequence[str], preferred_words: Dict[str, str], out_path: Path):
+def plot_letter_examples(
+    data: Dict[str, np.ndarray],
+    labels: Sequence[str],
+    preferred_words: Dict[str, str],
+    out_path: Path,
+):
     example_indices = build_example_rows(data, labels, preferred_words)
     fig, axes = plt.subplots(len(labels), 2, figsize=(10.5, 2.6 * len(labels)))
     if len(labels) == 1:
@@ -732,9 +830,19 @@ def plot_letter_examples(data: Dict[str, np.ndarray], labels: Sequence[str], pre
         ax_wav.set_title(f"/{lab}/ example: {data['words'][idx]}")
         ax_wav.set_xlabel("Time (s)")
         ax_wav.set_ylabel("Amplitude")
-        f, tt, Z = stft(x, fs=sr, window="hann", nperseg=400, noverlap=240, nfft=512, boundary=None)
+        f, tt, Z = stft(
+            x, fs=sr, window="hann", nperseg=400, noverlap=240, nfft=512, boundary=None
+        )
         ax_spec = axes[row_id, 1]
-        im = ax_spec.pcolormesh(tt, f / 1000.0, 20 * np.log10(np.abs(Z) + 1e-6), shading="gouraud", cmap="magma", vmin=-80, vmax=0)
+        im = ax_spec.pcolormesh(
+            tt,
+            f / 1000.0,
+            20 * np.log10(np.abs(Z) + 1e-6),
+            shading="gouraud",
+            cmap="magma",
+            vmin=-80,
+            vmax=0,
+        )
         ax_spec.set_ylim(0, 8)
         ax_spec.set_title(f"/{lab}/ spectrogram: {data['phones'][idx]}")
         ax_spec.set_xlabel("Time (s)")
@@ -746,7 +854,9 @@ def plot_letter_examples(data: Dict[str, np.ndarray], labels: Sequence[str], pre
     plt.close(fig)
 
 
-def plot_template_grid(X_cnn: np.ndarray, Y: np.ndarray, labels: Sequence[str], out_path: Path):
+def plot_template_grid(
+    X_cnn: np.ndarray, Y: np.ndarray, labels: Sequence[str], out_path: Path
+):
     fig, axes = plt.subplots(2, math.ceil(len(labels) / 2), figsize=(10.5, 6.2))
     axes = np.asarray(axes).reshape(-1)
     im = None
@@ -756,7 +866,7 @@ def plot_template_grid(X_cnn: np.ndarray, Y: np.ndarray, labels: Sequence[str], 
         ax.set_title(f"/{lab}/ average log-mel")
         ax.set_xlabel("Frame")
         ax.set_ylabel("Mel bin")
-    for ax in axes[len(labels):]:
+    for ax in axes[len(labels) :]:
         ax.axis("off")
     if im is not None:
         cax = fig.add_axes([0.92, 0.18, 0.015, 0.64])
@@ -770,7 +880,12 @@ def plot_template_grid(X_cnn: np.ndarray, Y: np.ndarray, labels: Sequence[str], 
 def plot_metrics(summary_df: pd.DataFrame, out_path: Path):
     melt = summary_df.melt(
         id_vars="method",
-        value_vars=["label_wise_accuracy", "exact_match_accuracy", "macro_f1", "micro_f1"],
+        value_vars=[
+            "label_wise_accuracy",
+            "exact_match_accuracy",
+            "macro_f1",
+            "micro_f1",
+        ],
         var_name="metric",
         value_name="score",
     )
@@ -801,14 +916,30 @@ def plot_per_label_f1(metrics_df: pd.DataFrame, out_path: Path):
     plt.close()
 
 
-def plot_score_distribution(scores: np.ndarray, y_true: np.ndarray, labels: Sequence[str], out_dir: Path):
+def plot_score_distribution(
+    scores: np.ndarray, y_true: np.ndarray, labels: Sequence[str], out_dir: Path
+):
     out_dir.mkdir(parents=True, exist_ok=True)
     for j, lab in enumerate(labels):
         plt.figure(figsize=(6.8, 4.2))
         pos = scores[y_true[:, j] == 1, j]
         neg = scores[y_true[:, j] == 0, j]
-        plt.hist(neg, bins=30, alpha=0.55, label=f"not /{lab}/", color="#9ecae1", density=True)
-        plt.hist(pos, bins=30, alpha=0.55, label=f"contains /{lab}/", color="#e6550d", density=True)
+        plt.hist(
+            neg,
+            bins=30,
+            alpha=0.55,
+            label=f"not /{lab}/",
+            color="#9ecae1",
+            density=True,
+        )
+        plt.hist(
+            pos,
+            bins=30,
+            alpha=0.55,
+            label=f"contains /{lab}/",
+            color="#e6550d",
+            density=True,
+        )
         plt.xlabel("template score")
         plt.ylabel("density")
         plt.title(f"Course-template score distribution for /{lab}/")
@@ -818,15 +949,208 @@ def plot_score_distribution(scores: np.ndarray, y_true: np.ndarray, labels: Sequ
         plt.close()
 
 
+def _reshape_course_template_part(template: np.ndarray, part: str) -> np.ndarray:
+    template = np.asarray(template, dtype=np.float32)
+    part_len = COURSE_SEGMENTS * FILTERBANK_MELS
+    if part == "raw":
+        offset = 0
+    elif part == "centered":
+        offset = part_len
+    else:
+        raise ValueError(f"Unknown course template part: {part}")
+    return template[offset : offset + part_len].reshape(
+        COURSE_SEGMENTS, FILTERBANK_MELS
+    ).T
+
+
+def plot_course_template_contrast(
+    labels: Sequence[str],
+    patch_pos_templates: np.ndarray,
+    patch_neg_templates: np.ndarray,
+    autocorr_pos_templates: np.ndarray,
+    autocorr_neg_templates: np.ndarray,
+    out_path: Path,
+):
+    fig, axes = plt.subplots(
+        len(labels), 3, figsize=(12.2, 2.65 * len(labels)), constrained_layout=True
+    )
+    if len(labels) == 1:
+        axes = np.asarray([axes])
+
+    raw_contrasts = [
+        _reshape_course_template_part(patch_pos_templates[j], "raw")
+        - _reshape_course_template_part(patch_neg_templates[j], "raw")
+        for j in range(len(labels))
+    ]
+    centered_contrasts = [
+        _reshape_course_template_part(patch_pos_templates[j], "centered")
+        - _reshape_course_template_part(patch_neg_templates[j], "centered")
+        for j in range(len(labels))
+    ]
+    raw_lim = max(float(np.max(np.abs(x))) for x in raw_contrasts) + 1e-12
+    centered_lim = max(float(np.max(np.abs(x))) for x in centered_contrasts) + 1e-12
+
+    for j, lab in enumerate(labels):
+        im0 = axes[j, 0].imshow(
+            raw_contrasts[j],
+            aspect="auto",
+            origin="lower",
+            cmap="coolwarm",
+            vmin=-raw_lim,
+            vmax=raw_lim,
+        )
+        axes[j, 0].set_title(f"/{lab}/ raw log-mel pos-neg")
+        axes[j, 0].set_xlabel("Segment")
+        axes[j, 0].set_ylabel("Mel bin")
+        axes[j, 0].set_xticks(range(COURSE_SEGMENTS))
+        fig.colorbar(im0, ax=axes[j, 0], fraction=0.046, pad=0.04)
+
+        im1 = axes[j, 1].imshow(
+            centered_contrasts[j],
+            aspect="auto",
+            origin="lower",
+            cmap="coolwarm",
+            vmin=-centered_lim,
+            vmax=centered_lim,
+        )
+        axes[j, 1].set_title(f"/{lab}/ onset-centered pos-neg")
+        axes[j, 1].set_xlabel("Segment")
+        axes[j, 1].set_ylabel("Mel bin")
+        axes[j, 1].set_xticks(range(COURSE_SEGMENTS))
+        fig.colorbar(im1, ax=axes[j, 1], fraction=0.046, pad=0.04)
+
+        auto_contrast = autocorr_pos_templates[j] - autocorr_neg_templates[j]
+        axes[j, 2].plot(
+            np.arange(len(auto_contrast)),
+            auto_contrast,
+            marker="o",
+            linewidth=1.7,
+            color="#2ca02c",
+        )
+        axes[j, 2].axhline(0, color="#333333", linewidth=0.8, alpha=0.7)
+        axes[j, 2].set_title(f"/{lab}/ envelope autocorr pos-neg")
+        axes[j, 2].set_xlabel("Lag")
+        axes[j, 2].set_ylabel("Contrast")
+        axes[j, 2].grid(alpha=0.25)
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=220)
+    plt.close(fig)
+
+
+def plot_course_localization_demo(
+    logmel: np.ndarray,
+    word: str,
+    true_label: str,
+    labels: Sequence[str],
+    patch_pos_templates: np.ndarray,
+    patch_neg_templates: np.ndarray,
+    autocorr_pos_templates: np.ndarray,
+    autocorr_neg_templates: np.ndarray,
+    out_path: Path,
+):
+    onset_idx = detect_course_onset(logmel)
+    energy = frame_energy_from_logmel(logmel)
+    smooth_energy = moving_average_1d(energy, COURSE_ENERGY_SMOOTH_FRAMES)
+    patch_rows, auto_rows = extract_course_candidates(logmel)
+
+    score_matrix = np.zeros(
+        (len(labels), len(COURSE_CANDIDATE_SHIFTS)), dtype=np.float32
+    )
+    for q, _shift in enumerate(COURSE_CANDIDATE_SHIFTS):
+        patch_row = patch_rows[q : q + 1]
+        auto_row = auto_rows[q : q + 1]
+        for j in range(len(labels)):
+            patch_score = cosine_similarity_rows(
+                patch_row, patch_pos_templates[j]
+            )[0] - cosine_similarity_rows(patch_row, patch_neg_templates[j])[0]
+            auto_score = cosine_similarity_rows(
+                auto_row, autocorr_pos_templates[j]
+            )[0] - cosine_similarity_rows(auto_row, autocorr_neg_templates[j])[0]
+            score_matrix[j, q] = (
+                COURSE_CROSS_WEIGHT * patch_score + COURSE_AUTOCORR_WEIGHT * auto_score
+            )
+
+    hop_s = 0.01
+    frame_times = np.arange(logmel.shape[0], dtype=np.float32) * hop_s
+    fig, axes = plt.subplots(3, 1, figsize=(10.5, 9.0), constrained_layout=True)
+
+    ax = axes[0]
+    im = ax.imshow(
+        logmel.T,
+        aspect="auto",
+        origin="lower",
+        extent=[
+            frame_times[0],
+            frame_times[-1] if len(frame_times) else 1.0,
+            0,
+            FILTERBANK_MELS - 1,
+        ],
+        cmap="magma",
+    )
+    ax.axvline(onset_idx * hop_s, color="#00e5ff", linestyle="--", linewidth=1.5)
+    for shift in COURSE_CANDIDATE_SHIFTS:
+        start = (onset_idx - COURSE_PRE_FRAMES + int(shift)) * hop_s
+        end = start + COURSE_WINDOW_FRAMES * hop_s
+        ax.axvspan(max(0.0, start), max(0.0, end), color="#fdae6b", alpha=0.16)
+    ax.set_title(f"course_filterbank_corr localization on {word} /{true_label}/")
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Mel bin")
+    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label="log energy")
+
+    ax = axes[1]
+    ax.plot(frame_times, energy, label="frame log energy", color="#636363")
+    ax.plot(
+        frame_times,
+        smooth_energy,
+        label="smoothed energy",
+        color="#1f77b4",
+        linewidth=2,
+    )
+    ax.axvline(onset_idx * hop_s, color="#00a6c8", linestyle="--", linewidth=1.5)
+    for shift in COURSE_CANDIDATE_SHIFTS:
+        start = (onset_idx - COURSE_PRE_FRAMES + int(shift)) * hop_s
+        end = start + COURSE_WINDOW_FRAMES * hop_s
+        ax.axvspan(max(0.0, start), max(0.0, end), color="#fdae6b", alpha=0.12)
+    ax.set_title("Onset estimate and candidate local windows")
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Log energy")
+    ax.legend(frameon=False)
+    ax.grid(alpha=0.25)
+
+    ax = axes[2]
+    sns.heatmap(
+        score_matrix,
+        ax=ax,
+        annot=True,
+        fmt=".4f",
+        cmap="viridis",
+        xticklabels=[str(s) for s in COURSE_CANDIDATE_SHIFTS],
+        yticklabels=[f"/{lab}/" for lab in labels],
+        cbar_kws={"label": "candidate score"},
+    )
+    ax.set_title("Contrastive template + autocorrelation score by shift")
+    ax.set_xlabel("Candidate shift (frames)")
+    ax.set_ylabel("Label")
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=220)
+    plt.close(fig)
+
+
 def plot_strict_template_construction(bank: Dict[str, np.ndarray], out_path: Path):
-    fig, axes = plt.subplots(len(bank["labels"]), 2, figsize=(10.5, 8.5), constrained_layout=True)
+    fig, axes = plt.subplots(
+        len(bank["labels"]), 2, figsize=(10.5, 8.5), constrained_layout=True
+    )
     freq_khz = np.asarray(bank["freq_hz"], dtype=np.float32) / 1000.0
     block_frames = int(bank["cfg"].get("block_frames", STRICT_BLOCK_FRAMES))
     for i, lab in enumerate(bank["labels"]):
         wav_path = Path(bank["template_paths"][i])
         _, x = load_wav(wav_path)
         frames = strict_frame_signal(x, 16000)
-        block = pad_or_trim_rows(frames, int(bank["template_start_frames"][i]), block_frames)
+        block = pad_or_trim_rows(
+            frames, int(bank["template_start_frames"][i]), block_frames
+        )
         spec = np.abs(np.fft.fft(block, STRICT_NFFT, axis=1))[:, : STRICT_NFFT // 2 + 1]
         spec = spec / np.maximum(spec.max(axis=1, keepdims=True), 1e-12)
         mean_spec = np.asarray(bank["templates"][i], dtype=np.float32)
@@ -859,11 +1183,15 @@ def plot_strict_template_construction(bank: Dict[str, np.ndarray], out_path: Pat
     plt.close(fig)
 
 
-def plot_strict_correlation_demo(example_path: Path, bank: Dict[str, np.ndarray], label: str, out_path: Path):
+def plot_strict_correlation_demo(
+    example_path: Path, bank: Dict[str, np.ndarray], label: str, out_path: Path
+):
     sr, x = load_wav(example_path)
     frames = strict_frame_signal(x, sr)
     block_frames = int(bank["cfg"].get("block_frames", STRICT_BLOCK_FRAMES))
-    descriptors, start_frames = strict_all_candidate_descriptors(x, sr, block_frames=block_frames)
+    descriptors, start_frames = strict_all_candidate_descriptors(
+        x, sr, block_frames=block_frames
+    )
     score_traces = descriptors @ np.asarray(bank["templates"], dtype=np.float32).T
     label_idx = list(bank["labels"]).index(label)
     best_idx = int(np.argmax(score_traces[:, label_idx]))
@@ -887,7 +1215,9 @@ def plot_strict_correlation_demo(example_path: Path, bank: Dict[str, np.ndarray]
 
     ax = axes[1]
     block = pad_or_trim_rows(frames, best_start, block_frames)
-    block_spec = np.abs(np.fft.fft(block, STRICT_NFFT, axis=1))[:, : STRICT_NFFT // 2 + 1]
+    block_spec = np.abs(np.fft.fft(block, STRICT_NFFT, axis=1))[
+        :, : STRICT_NFFT // 2 + 1
+    ]
     block_spec = block_spec / np.maximum(block_spec.max(axis=1, keepdims=True), 1e-12)
     im = ax.imshow(
         block_spec,
@@ -904,9 +1234,20 @@ def plot_strict_correlation_demo(example_path: Path, bank: Dict[str, np.ndarray]
     ax = axes[2]
     colors = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728"]
     for j, lab in enumerate(bank["labels"]):
-        ax.plot(start_times, score_traces[:, j], linewidth=2.0 if lab == label else 1.3, color=colors[j], label=f"/{lab}/")
+        ax.plot(
+            start_times,
+            score_traces[:, j],
+            linewidth=2.0 if lab == label else 1.3,
+            color=colors[j],
+            label=f"/{lab}/",
+        )
     ax.axvline(start_times[best_idx], color="#111111", linestyle="--", linewidth=1.2)
-    ax.scatter([start_times[best_idx]], [score_traces[best_idx, label_idx]], color="#111111", zorder=5)
+    ax.scatter(
+        [start_times[best_idx]],
+        [score_traces[best_idx, label_idx]],
+        color="#111111",
+        zorder=5,
+    )
     ax.set_title("Sliding normalized correlation by candidate block")
     ax.set_xlabel("Block start time (s)")
     ax.set_ylabel("Correlation score")
@@ -936,13 +1277,17 @@ def train_cnn(
     std = float(X_train.std() + 1e-6)
     X_train_n = ((X_train - mean) / std)[:, None, :, :].astype(np.float32)
     X_dev_n = ((X_dev - mean) / std)[:, None, :, :].astype(np.float32)
-    ds = TensorDataset(torch.from_numpy(X_train_n), torch.from_numpy(y_train.astype(np.float32)))
+    ds = TensorDataset(
+        torch.from_numpy(X_train_n), torch.from_numpy(y_train.astype(np.float32))
+    )
     dl = DataLoader(ds, batch_size=batch_size, shuffle=True)
     model = MultiCnn(y_train.shape[1]).to(device)
     pos = y_train.sum(0)
     neg = len(y_train) - pos
     pos_weight = np.clip(neg / np.maximum(pos, 1), 1, 10)
-    crit = nn.BCEWithLogitsLoss(pos_weight=torch.tensor(pos_weight, dtype=torch.float32, device=device))
+    crit = nn.BCEWithLogitsLoss(
+        pos_weight=torch.tensor(pos_weight, dtype=torch.float32, device=device)
+    )
     opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     history = []
     best_dev_macro_f1 = -1.0
@@ -954,7 +1299,9 @@ def train_cnn(
         scores = []
         model.eval()
         with torch.no_grad():
-            for (xb,) in DataLoader(TensorDataset(torch.from_numpy(Xn)), batch_size=512):
+            for (xb,) in DataLoader(
+                TensorDataset(torch.from_numpy(Xn)), batch_size=512
+            ):
                 scores.append(torch.sigmoid(model(xb.to(device))).cpu().numpy())
         return np.vstack(scores)
 
@@ -975,7 +1322,9 @@ def train_cnn(
         dev_scores = predict_scores(X_dev_n)
         dev_thresholds = fit_thresholds(y_dev.astype(int), dev_scores)
         dev_pred = predict_with_thresholds(dev_scores, dev_thresholds)
-        dev_macro_f1 = float(f1_score(y_dev, dev_pred, average="macro", zero_division=0))
+        dev_macro_f1 = float(
+            f1_score(y_dev, dev_pred, average="macro", zero_division=0)
+        )
         history.append(
             {
                 "epoch": epoch,
@@ -987,7 +1336,9 @@ def train_cnn(
         if dev_macro_f1 > best_dev_macro_f1 + 1e-8:
             best_dev_macro_f1 = dev_macro_f1
             best_epoch = epoch
-            best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+            best_state = {
+                k: v.detach().cpu().clone() for k, v in model.state_dict().items()
+            }
             stale_epochs = 0
         else:
             stale_epochs += 1
@@ -998,10 +1349,21 @@ def train_cnn(
         model.load_state_dict(best_state)
     train_scores = predict_scores(X_train_n)
     dev_scores = predict_scores(X_dev_n)
-    return model, train_scores, dev_scores, mean, std, pd.DataFrame(history), best_epoch, best_dev_macro_f1
+    return (
+        model,
+        train_scores,
+        dev_scores,
+        mean,
+        std,
+        pd.DataFrame(history),
+        best_epoch,
+        best_dev_macro_f1,
+    )
 
 
-def cnn_predict_scores(model, X: np.ndarray, mean: float, std: float, device: str) -> np.ndarray:
+def cnn_predict_scores(
+    model, X: np.ndarray, mean: float, std: float, device: str
+) -> np.ndarray:
     Xn = ((X - mean) / std)[:, None, :, :].astype(np.float32)
     scores = []
     model.eval()
@@ -1013,13 +1375,31 @@ def cnn_predict_scores(model, X: np.ndarray, mean: float, std: float, device: st
 
 def plot_cnn_history(history_df: pd.DataFrame, out_path: Path):
     fig, ax1 = plt.subplots(figsize=(8.2, 4.6))
-    ax1.plot(history_df["epoch"], history_df["train_loss"], marker="o", label="train loss", color="#1f77b4")
+    ax1.plot(
+        history_df["epoch"],
+        history_df["train_loss"],
+        marker="o",
+        label="train loss",
+        color="#1f77b4",
+    )
     ax1.set_xlabel("Epoch")
     ax1.set_ylabel("Train loss", color="#1f77b4")
     ax1.tick_params(axis="y", labelcolor="#1f77b4")
     ax2 = ax1.twinx()
-    ax2.plot(history_df["epoch"], history_df["dev_macro_f1"], marker="s", label="dev macro F1", color="#d62728")
-    ax2.plot(history_df["epoch"], history_df["dev_label_wise_accuracy"], marker="^", label="dev label-wise acc", color="#2ca02c")
+    ax2.plot(
+        history_df["epoch"],
+        history_df["dev_macro_f1"],
+        marker="s",
+        label="dev macro F1",
+        color="#d62728",
+    )
+    ax2.plot(
+        history_df["epoch"],
+        history_df["dev_label_wise_accuracy"],
+        marker="^",
+        label="dev label-wise acc",
+        color="#2ca02c",
+    )
     ax2.set_ylabel("Dev score", color="#d62728")
     ax2.tick_params(axis="y", labelcolor="#d62728")
     lines = ax1.get_lines() + ax2.get_lines()
@@ -1117,12 +1497,22 @@ def export_course_template_bank(
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--manifest", type=Path, default=Path("data/raw/mswc_en_subset_600/manifest.csv"))
+    parser.add_argument(
+        "--manifest",
+        type=Path,
+        default=Path("data/raw/mswc_en_subset_600/manifest.csv"),
+    )
     parser.add_argument("--labels", nargs="+", default=DEFAULT_LABELS)
-    parser.add_argument("--cache", type=Path, default=Path("build/mswc_course_600/features_v1.npz"))
+    parser.add_argument(
+        "--cache", type=Path, default=Path("build/mswc_course_600/features_v1.npz")
+    )
     parser.add_argument("--out-dir", type=Path, default=Path("build/mswc_course_600"))
     parser.add_argument("--fig-dir", type=Path, default=Path("figures/mswc_course_600"))
-    parser.add_argument("--report-path", type=Path, default=Path("references/mswc-course-results-600.md"))
+    parser.add_argument(
+        "--report-path",
+        type=Path,
+        default=Path("references/mswc-course-results-600.md"),
+    )
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--cnn-batch-size", type=int, default=192)
     parser.add_argument("--cnn-lr", type=float, default=1e-3)
@@ -1145,8 +1535,16 @@ def main() -> int:
     X_course_tr = data["X_cnn"][train_idx]
     X_course_dev = data["X_cnn"][dev_idx]
     X_course_te = data["X_cnn"][test_idx]
-    X_stat_tr, X_stat_dev, X_stat_te = data["X_stat"][train_idx], data["X_stat"][dev_idx], data["X_stat"][test_idx]
-    X_cnn_tr, X_cnn_dev, X_cnn_te = data["X_cnn"][train_idx], data["X_cnn"][dev_idx], data["X_cnn"][test_idx]
+    X_stat_tr, X_stat_dev, X_stat_te = (
+        data["X_stat"][train_idx],
+        data["X_stat"][dev_idx],
+        data["X_stat"][test_idx],
+    )
+    X_cnn_tr, X_cnn_dev, X_cnn_te = (
+        data["X_cnn"][train_idx],
+        data["X_cnn"][dev_idx],
+        data["X_cnn"][test_idx],
+    )
     Y_tr, Y_dev, Y_te = Y[train_idx], Y[dev_idx], Y[test_idx]
     exclusive_decode = bool(np.all(Y.sum(axis=1) == 1))
 
@@ -1168,10 +1566,19 @@ def main() -> int:
             block_frames=int(strict_bank["cfg"]["block_frames"]),
             template_source="train_dev_refit_mean_template",
         )
-    strict_te_scores = score_strict_course_detector(data["paths"][test_idx], strict_bank)
-    strict_te_pred = predict_with_thresholds(strict_te_scores, strict_thresholds, exclusive=exclusive_decode)
+    strict_te_scores = score_strict_course_detector(
+        data["paths"][test_idx], strict_bank
+    )
+    strict_te_pred = predict_with_thresholds(
+        strict_te_scores, strict_thresholds, exclusive=exclusive_decode
+    )
 
-    patch_pos_templates, patch_neg_templates, autocorr_pos_templates, autocorr_neg_templates = fit_course_detector(X_course_tr, Y_tr)
+    (
+        patch_pos_templates,
+        patch_neg_templates,
+        autocorr_pos_templates,
+        autocorr_neg_templates,
+    ) = fit_course_detector(X_course_tr, Y_tr)
     course_dev_scores = score_course_detector(
         X_course_dev,
         patch_pos_templates,
@@ -1187,7 +1594,9 @@ def main() -> int:
         autocorr_pos_templates,
         autocorr_neg_templates,
     )
-    course_te_pred = predict_with_thresholds(course_te_scores, course_thresholds, exclusive=exclusive_decode)
+    course_te_pred = predict_with_thresholds(
+        course_te_scores, course_thresholds, exclusive=exclusive_decode
+    )
 
     method_preds = {
         "strict_course_fft": strict_te_pred,
@@ -1213,7 +1622,9 @@ def main() -> int:
         mlp_dev_scores = get_mlp_scores(mlp_model, X_stat_dev)
         mlp_thresholds = fit_thresholds(Y_dev, mlp_dev_scores)
         mlp_te_scores = get_mlp_scores(mlp_model, X_stat_te)
-        mlp_te_pred = predict_with_thresholds(mlp_te_scores, mlp_thresholds, exclusive=exclusive_decode)
+        mlp_te_pred = predict_with_thresholds(
+            mlp_te_scores, mlp_thresholds, exclusive=exclusive_decode
+        )
         method_preds["mlp_ai"] = mlp_te_pred
         method_scores["mlp_ai"] = mlp_te_scores
         threshold_table["mlp_threshold"] = mlp_thresholds
@@ -1226,7 +1637,16 @@ def main() -> int:
             }
         else:
             device = "cuda" if torch.cuda.is_available() else "cpu"
-            cnn_model, _, cnn_dev_scores, cnn_mean, cnn_std, cnn_history_df, best_epoch, best_dev_macro_f1 = train_cnn(
+            (
+                cnn_model,
+                _,
+                cnn_dev_scores,
+                cnn_mean,
+                cnn_std,
+                cnn_history_df,
+                best_epoch,
+                best_dev_macro_f1,
+            ) = train_cnn(
                 X_cnn_tr,
                 Y_tr,
                 X_cnn_dev,
@@ -1239,8 +1659,12 @@ def main() -> int:
                 patience=args.cnn_patience,
             )
             cnn_thresholds = fit_thresholds(Y_dev, cnn_dev_scores)
-            cnn_te_scores = cnn_predict_scores(cnn_model, X_cnn_te, cnn_mean, cnn_std, device=device)
-            cnn_te_pred = predict_with_thresholds(cnn_te_scores, cnn_thresholds, exclusive=exclusive_decode)
+            cnn_te_scores = cnn_predict_scores(
+                cnn_model, X_cnn_te, cnn_mean, cnn_std, device=device
+            )
+            cnn_te_pred = predict_with_thresholds(
+                cnn_te_scores, cnn_thresholds, exclusive=exclusive_decode
+            )
             method_preds["cnn_ai"] = cnn_te_pred
             method_scores["cnn_ai"] = cnn_te_scores
             threshold_table["cnn_threshold"] = cnn_thresholds
@@ -1262,11 +1686,24 @@ def main() -> int:
                 "std": cnn_std,
             }
 
-    summary_rows = [summary_metrics(Y_te, pred, args.labels, method) for method, pred in method_preds.items()]
+    summary_rows = [
+        summary_metrics(Y_te, pred, args.labels, method)
+        for method, pred in method_preds.items()
+    ]
     summary_df = pd.DataFrame(summary_rows)
-    metrics_df = pd.concat([label_metrics(Y_te, pred, args.labels, method) for method, pred in method_preds.items()], ignore_index=True)
+    metrics_df = pd.concat(
+        [
+            label_metrics(Y_te, pred, args.labels, method)
+            for method, pred in method_preds.items()
+        ],
+        ignore_index=True,
+    )
 
-    example_words = [DEFAULT_EXAMPLE_WORDS[lab] for lab in args.labels if DEFAULT_EXAMPLE_WORDS.get(lab)]
+    example_words = [
+        DEFAULT_EXAMPLE_WORDS[lab]
+        for lab in args.labels
+        if DEFAULT_EXAMPLE_WORDS.get(lab)
+    ]
     example_indices = []
     for word in example_words:
         idxs = test_idx[data["words"][test_idx] == word]
@@ -1282,8 +1719,13 @@ def main() -> int:
         }
         local_idx = int(np.where(test_idx == idx)[0][0])
         for method, pred in method_preds.items():
-            row[f"{method}_pred"] = " ".join(l for l, v in zip(args.labels, pred[local_idx]) if v) or "-"
-            row[f"{method}_scores"] = ", ".join(f"{lab}:{method_scores[method][local_idx, j]:.3f}" for j, lab in enumerate(args.labels))
+            row[f"{method}_pred"] = (
+                " ".join(l for l, v in zip(args.labels, pred[local_idx]) if v) or "-"
+            )
+            row[f"{method}_scores"] = ", ".join(
+                f"{lab}:{method_scores[method][local_idx, j]:.3f}"
+                for j, lab in enumerate(args.labels)
+            )
         example_rows.append(row)
     example_df = pd.DataFrame(example_rows)
 
@@ -1295,7 +1737,9 @@ def main() -> int:
         "train_files": int(len(train_idx)),
         "dev_files": int(len(dev_idx)),
         "test_files": int(len(test_idx)),
-        "positive_counts_test": {lab: int(Y_te[:, j].sum()) for j, lab in enumerate(args.labels)},
+        "positive_counts_test": {
+            lab: int(Y_te[:, j].sum()) for j, lab in enumerate(args.labels)
+        },
         "strict_course_detector": {
             "template_source": strict_bank.get("template_source", "unknown"),
             "refit_on_train_dev": bool(exclusive_decode),
@@ -1306,7 +1750,9 @@ def main() -> int:
             "nfft": STRICT_NFFT,
             "template_words": strict_bank["template_words"],
             "template_paths": strict_bank["template_paths"],
-            "template_sample_counts": strict_bank["template_sample_counts"].astype(int).tolist(),
+            "template_sample_counts": strict_bank["template_sample_counts"]
+            .astype(int)
+            .tolist(),
             "dev_tuning_history": strict_tuning_history,
         },
         "course_detector": {
@@ -1326,7 +1772,9 @@ def main() -> int:
         "methods": summary_rows,
         "cnn": cnn_summary,
     }
-    (args.out_dir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+    (args.out_dir / "summary.json").write_text(
+        json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     summary_df.to_csv(args.out_dir / "summary_metrics.csv", index=False)
     metrics_df.to_csv(args.out_dir / "per_label_metrics.csv", index=False)
     example_df.to_csv(args.out_dir / "example_predictions.csv", index=False)
@@ -1336,8 +1784,12 @@ def main() -> int:
         "template_source": strict_bank.get("template_source", "unknown"),
         "template_paths": strict_bank["template_paths"],
         "template_words": strict_bank["template_words"],
-        "template_start_frames": strict_bank["template_start_frames"].astype(int).tolist(),
-        "template_sample_counts": strict_bank["template_sample_counts"].astype(int).tolist(),
+        "template_start_frames": strict_bank["template_start_frames"]
+        .astype(int)
+        .tolist(),
+        "template_sample_counts": strict_bank["template_sample_counts"]
+        .astype(int)
+        .tolist(),
         "templates": strict_bank["templates"].astype(float).tolist(),
         "freq_hz": strict_bank["freq_hz"].astype(float).tolist(),
         "cfg": strict_bank["cfg"],
@@ -1383,13 +1835,22 @@ def main() -> int:
         summary_df,
         metrics_df,
         example_df,
-        {"train": len(train_idx), "dev": len(dev_idx), "test": len(test_idx), "total": len(Y)},
+        {
+            "train": len(train_idx),
+            "dev": len(dev_idx),
+            "test": len(test_idx),
+            "total": len(Y),
+        },
         command_lines,
         ", ".join(method_desc_parts),
     )
 
-    plot_letter_examples(data, args.labels, DEFAULT_EXAMPLE_WORDS, args.fig_dir / "letter_examples.png")
-    plot_strict_template_construction(strict_bank, args.fig_dir / "strict_course_template_construction.png")
+    plot_letter_examples(
+        data, args.labels, DEFAULT_EXAMPLE_WORDS, args.fig_dir / "letter_examples.png"
+    )
+    plot_strict_template_construction(
+        strict_bank, args.fig_dir / "strict_course_template_construction.png"
+    )
     demo_idx = build_example_rows(data, args.labels, DEFAULT_EXAMPLE_WORDS)[0]
     plot_strict_correlation_demo(
         Path(data["paths"][demo_idx]),
@@ -1397,11 +1858,41 @@ def main() -> int:
         args.labels[0],
         args.fig_dir / "strict_course_correlation_demo.png",
     )
-    plot_template_grid(data["X_cnn"][train_idx], Y_tr, args.labels, args.fig_dir / "template_grid.png")
+    plot_template_grid(
+        data["X_cnn"][train_idx], Y_tr, args.labels, args.fig_dir / "template_grid.png"
+    )
+    plot_course_template_contrast(
+        args.labels,
+        patch_pos_templates,
+        patch_neg_templates,
+        autocorr_pos_templates,
+        autocorr_neg_templates,
+        args.fig_dir / "course_filterbank_template_contrast.png",
+    )
+    course_demo_local_idx = int(np.where(test_idx == demo_idx)[0][0])
+    true_lab = " ".join(
+        lab for lab, v in zip(args.labels, Y_te[course_demo_local_idx]) if v
+    )
+    plot_course_localization_demo(
+        X_course_te[course_demo_local_idx],
+        str(data["words"][demo_idx]),
+        true_lab,
+        args.labels,
+        patch_pos_templates,
+        patch_neg_templates,
+        autocorr_pos_templates,
+        autocorr_neg_templates,
+        args.fig_dir / "course_filterbank_localization_demo.png",
+    )
     plot_metrics(summary_df, args.fig_dir / "metric_summary.png")
     plot_per_label_f1(metrics_df, args.fig_dir / "per_label_f1.png")
-    plot_score_distribution(strict_te_scores, Y_te, args.labels, args.fig_dir / "strict_course")
+    plot_score_distribution(
+        strict_te_scores, Y_te, args.labels, args.fig_dir / "strict_course"
+    )
     plot_score_distribution(course_te_scores, Y_te, args.labels, args.fig_dir)
+    plot_score_distribution(
+        course_te_scores, Y_te, args.labels, args.fig_dir / "course_filterbank_corr"
+    )
 
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     print("\nPer-label metrics:")

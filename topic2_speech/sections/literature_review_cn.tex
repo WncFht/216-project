@@ -1,6 +1,6 @@
 \section{相关工作与理论背景}
 
-本文关心的不是大词汇量识别，而是短语音里一个目标首辅音是否真的出现。这个问题更接近传统语音处理里的短时分析、局部谱形比较和模板匹配，而不是把整段音频直接交给一个黑盒分类器。
+本文关心的不是大词汇量识别，而是短语音里一个目标首辅音是否真的出现。这个问题更接近传统语音处理里的短时分析、局部谱形比较和模板匹配；数据上使用 MSWC 这种面向 keyword spotting 和 spoken term search 的词级语音语料\cite{mazumder2021mswc}。
 
 \subsection{短时分析与频谱表示}
 
@@ -16,4 +16,4 @@ Rabiner 对 HMM 的综述则把这种帧级表示和序列建模连了起来\cit
 
 \subsection{本文为什么先用课堂方法}
 
-本文后面的 AI 对照只负责补充结果，不负责定义主线。主线先从局部频谱模板出发，把“一个词首辅音在声学上长什么样”讲明白，再看更复杂的方法能把这个边界推到哪里。这样安排，后面的比较才不会变成单纯的分数表。
+keyword spotting 里常见的学习型路线包括小型 DNN/CNN\cite{chen2014kws,sainath2015}、Speech Commands 式有限词表评测\cite{warden2018}、Transformer 与自监督语音表征\cite{berg2021,baevski2020,hsu2021hubert,chen2022wavlm,gao2023}，以及流式开放词表检测\cite{kim2025}。本文仍先用课堂频谱模板定义主线，再用 \texttt{course\_filterbank\_corr} 做扩展模板对照，并把 MLP/CNN 作为神经网络对照。

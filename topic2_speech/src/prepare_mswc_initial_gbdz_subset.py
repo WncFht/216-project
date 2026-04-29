@@ -137,9 +137,13 @@ def select_words(candidates_by_label: dict, words_per_label: int):
     return selected, words_per_label
 
 
+def split_quotas(train: int, dev: int, test: int) -> dict:
+    return {"train": train, "dev": dev, "test": test}
+
+
 def choose_rows(selected_words, rows_by_word, train_per_word: int, dev_per_word: int, test_per_word: int, seed: int):
     rng = random.Random(seed)
-    quotas = {"train": train_per_word, "dev": dev_per_word, "test": test_per_word}
+    quotas = split_quotas(train_per_word, dev_per_word, test_per_word)
     chosen = []
     for item in selected_words:
         word = item["word"]
@@ -154,6 +158,84 @@ def choose_rows(selected_words, rows_by_word, train_per_word: int, dev_per_word:
                 picked["phones"] = item["phones"]
                 chosen.append(picked)
     return chosen
+
+
+def _attach_label_and_phones(rows, item):
+    picked_rows = []
+    for row in rows:
+        picked = dict(row)
+        picked["label"] = item["label"]
+        picked["phones"] = item["phones"]
+        picked_rows.append(picked)
+    return picked_rows
+
+
+def choose_rows_balanced_cap(
+    selected_words,
+    rows_by_word,
+    train_per_word: int,
+    dev_per_word: int,
+    test_per_word: int,
+    min_train_per_word: int,
+    min_dev_per_word: int,
+    min_test_per_word: int,
+    seed: int,
+):
+    """Sample many words while keeping each label's split size identical.
+
+    The fixed quota mode requires every selected word to have exactly the same
+    number of train/dev/test clips.  That blocks rare but valid /z/ words.  This
+    mode keeps the selected word count balanced, guarantees a minimum number of
+    clips per selected word and split, caps dominant words, then trims each
+    label to the same split total.
+    """
+
+    rng = random.Random(seed)
+    caps = split_quotas(train_per_word, dev_per_word, test_per_word)
+    mins = split_quotas(min_train_per_word, min_dev_per_word, min_test_per_word)
+    by_label = defaultdict(list)
+    for item in selected_words:
+        by_label[item["label"]].append(item)
+
+    prepared = {}
+    totals_by_label = defaultdict(dict)
+    for label in TARGET_LABELS:
+        for split, cap in caps.items():
+            mandatory = []
+            optional = []
+            min_count = mins[split]
+            for item in by_label[label]:
+                pool = list(rows_by_word[item["word"]][split])
+                rng.shuffle(pool)
+                capped = pool[: min(cap, len(pool))]
+                if len(capped) < min_count:
+                    raise ValueError(
+                        f"Word '{item['word']}' has only {len(capped)} rows in split '{split}', "
+                        f"need at least {min_count}."
+                    )
+                mandatory.extend(_attach_label_and_phones(capped[:min_count], item))
+                optional.extend(_attach_label_and_phones(capped[min_count:], item))
+            totals_by_label[label][split] = len(mandatory) + len(optional)
+            prepared[(label, split)] = (mandatory, optional)
+
+    split_targets = {
+        split: min(totals_by_label[label][split] for label in TARGET_LABELS)
+        for split in caps
+    }
+    chosen = []
+    for label in TARGET_LABELS:
+        for split in caps:
+            mandatory, optional = prepared[(label, split)]
+            target = split_targets[split]
+            if len(mandatory) > target:
+                raise ValueError(
+                    f"Mandatory rows for label '{label}' split '{split}' exceed target "
+                    f"({len(mandatory)} > {target})."
+                )
+            rng.shuffle(optional)
+            chosen.extend(mandatory)
+            chosen.extend(optional[: target - len(mandatory)])
+    return chosen, split_targets, {label: dict(totals_by_label[label]) for label in TARGET_LABELS}
 
 
 def build_manifest(chosen_rows, selected_lookup: dict, out_root: Path):
@@ -266,6 +348,19 @@ def parse_args():
     ap.add_argument("--dev-per-word", type=int, default=5)
     ap.add_argument("--test-per-word", type=int, default=5)
     ap.add_argument(
+        "--sampling-mode",
+        choices=("fixed", "balanced-cap"),
+        default="fixed",
+        help=(
+            "fixed keeps the historical exact per-word quota; balanced-cap keeps "
+            "more words by treating train/dev/test values as per-word caps and "
+            "balancing the final split totals per label."
+        ),
+    )
+    ap.add_argument("--min-train-per-word", type=int, default=1)
+    ap.add_argument("--min-dev-per-word", type=int, default=1)
+    ap.add_argument("--min-test-per-word", type=int, default=1)
+    ap.add_argument(
         "--words-per-label",
         type=int,
         default=0,
@@ -286,23 +381,50 @@ def main():
 
     metadata = load_metadata(metadata_path)
     counts, rows_by_word = load_split_rows(splits_path)
+    if args.sampling_mode == "fixed":
+        min_train, min_dev, min_test = args.train_per_word, args.dev_per_word, args.test_per_word
+    else:
+        min_train, min_dev, min_test = args.min_train_per_word, args.min_dev_per_word, args.min_test_per_word
+
     candidates_by_label, initial_match_counts, quota_eligible_counts = build_candidates(
         metadata,
         counts,
-        min_train=args.train_per_word,
-        min_dev=args.dev_per_word,
-        min_test=args.test_per_word,
+        min_train=min_train,
+        min_dev=min_dev,
+        min_test=min_test,
     )
     selected_words, words_per_label = select_words(candidates_by_label, args.words_per_label)
     selected_lookup = {item["word"]: item for item in selected_words}
-    chosen_rows = choose_rows(
-        selected_words,
-        rows_by_word,
-        train_per_word=args.train_per_word,
-        dev_per_word=args.dev_per_word,
-        test_per_word=args.test_per_word,
-        seed=args.seed,
-    )
+    if args.sampling_mode == "fixed":
+        chosen_rows = choose_rows(
+            selected_words,
+            rows_by_word,
+            train_per_word=args.train_per_word,
+            dev_per_word=args.dev_per_word,
+            test_per_word=args.test_per_word,
+            seed=args.seed,
+        )
+        split_targets = split_quotas(
+            words_per_label * args.train_per_word,
+            words_per_label * args.dev_per_word,
+            words_per_label * args.test_per_word,
+        )
+        capped_available_by_label = {
+            label: dict(split_targets)
+            for label in TARGET_LABELS
+        }
+    else:
+        chosen_rows, split_targets, capped_available_by_label = choose_rows_balanced_cap(
+            selected_words,
+            rows_by_word,
+            train_per_word=args.train_per_word,
+            dev_per_word=args.dev_per_word,
+            test_per_word=args.test_per_word,
+            min_train_per_word=args.min_train_per_word,
+            min_dev_per_word=args.min_dev_per_word,
+            min_test_per_word=args.min_test_per_word,
+            seed=args.seed,
+        )
     manifest = build_manifest(chosen_rows, selected_lookup, args.out_root)
 
     args.out_root.mkdir(parents=True, exist_ok=True)
@@ -316,16 +438,21 @@ def main():
     label_summary_rows = []
     selected_files_by_label = Counter()
     selected_words_by_label = Counter()
+    selected_split_by_label = defaultdict(Counter)
+    selected_split_by_word = defaultdict(Counter)
     selected_words_list = defaultdict(list)
     for item in selected_words:
         selected_words_by_label[item["label"]] += 1
         selected_words_list[item["label"]].append(item["word"])
     for row in manifest:
         selected_files_by_label[row["label"]] += 1
+        selected_split_by_label[row["label"]][row["split"]] += 1
+        selected_split_by_word[(row["label"], row["word"])][row["split"]] += 1
     for label in TARGET_LABELS:
         for item in selected_words:
             if item["label"] != label:
                 continue
+            word_counts = selected_split_by_word[(label, item["word"])]
             word_rows.append(
                 {
                     "label": label,
@@ -335,10 +462,10 @@ def main():
                     "available_dev": item["available_dev"],
                     "available_test": item["available_test"],
                     "available_total": item["available_total"],
-                    "selected_train": args.train_per_word,
-                    "selected_dev": args.dev_per_word,
-                    "selected_test": args.test_per_word,
-                    "selected_total": args.train_per_word + args.dev_per_word + args.test_per_word,
+                    "selected_train": int(word_counts["train"]),
+                    "selected_dev": int(word_counts["dev"]),
+                    "selected_test": int(word_counts["test"]),
+                    "selected_total": int(sum(word_counts.values())),
                 }
             )
         label_summary_rows.append(
@@ -347,9 +474,9 @@ def main():
                 "initial_match_words": int(initial_match_counts[label]),
                 "quota_eligible_words": int(quota_eligible_counts[label]),
                 "selected_words": int(selected_words_by_label[label]),
-                "selected_train_samples": int(selected_words_by_label[label] * args.train_per_word),
-                "selected_dev_samples": int(selected_words_by_label[label] * args.dev_per_word),
-                "selected_test_samples": int(selected_words_by_label[label] * args.test_per_word),
+                "selected_train_samples": int(selected_split_by_label[label]["train"]),
+                "selected_dev_samples": int(selected_split_by_label[label]["dev"]),
+                "selected_test_samples": int(selected_split_by_label[label]["test"]),
                 "selected_total_samples": int(selected_files_by_label[label]),
             }
         )
@@ -413,9 +540,18 @@ def main():
         "labels": list(TARGET_LABELS),
         "raw_root": str(args.raw_root),
         "out_root": str(args.out_root),
+        "sampling_mode": args.sampling_mode,
         "train_per_word": args.train_per_word,
         "dev_per_word": args.dev_per_word,
         "test_per_word": args.test_per_word,
+        "min_train_per_word": min_train,
+        "min_dev_per_word": min_dev,
+        "min_test_per_word": min_test,
+        "balanced_split_targets_per_label": {k: int(v) for k, v in split_targets.items()},
+        "capped_available_split_totals_by_label": {
+            label: {split: int(count) for split, count in capped_available_by_label[label].items()}
+            for label in TARGET_LABELS
+        },
         "words_per_label": words_per_label,
         "seed": args.seed,
         "initial_match_words_by_label": {label: int(initial_match_counts[label]) for label in TARGET_LABELS},

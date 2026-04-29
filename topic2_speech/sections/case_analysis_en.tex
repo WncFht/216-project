@@ -1,0 +1,27 @@
+\section{Qualitative Case Analysis}
+
+\subsection{Spectral templates for four representative words}
+
+Figure~\ref{fig:matlab-spectra} shows the short-time FFT templates used in the MATLAB demonstration. The four representative words are \textit{get}, \textit{boy}, \textit{did}, and \textit{zero}. This figure is not a training summary; it is a visual check of the spectral shapes that the template method compares.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\textwidth]{figures/course_matlab/example_short_time_spectra.png}
+    \caption{Short-time FFT magnitude templates for the four representative words.}
+    \label{fig:matlab-spectra}
+\end{figure}
+
+The spectra match the expected acoustic pattern. /z/ has longer high-frequency frication. /b/ and /d/ depend on short release cues. /g/ is more sensitive to where the block is cut, which makes it easier for alignment error to blur the evidence.
+
+\subsection{Correlation score matrix}
+
+Figure~\ref{fig:matlab-score} reports the correlation scores between the four case words and the four templates. The matrix turns template similarity into a numerical object, making it clear when the correct template wins and when the margins are small.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.70\textwidth]{figures/course_matlab/example_score_matrix.png}
+    \caption{Correlation score matrix for the four representative words.}
+    \label{fig:matlab-score}
+\end{figure}
+
+Small gaps between the top scores usually indicate unstable onset alignment or a weak release cue. This observation motivates the extended method's onset-centered search, but it also explains why the strict FFT baseline remains useful for interpretation.

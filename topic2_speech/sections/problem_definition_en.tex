@@ -1,0 +1,57 @@
+\section{Introduction and Problem Formulation}
+
+The original project asks for spectral analysis of voiced consonants and a program that detects selected letters in spoken words. This report treats the task as four-way initial-consonant recognition rather than general word recognition. Each recording is a one-second, 16 kHz waveform $x_i[n]$. The class set is
+\[
+C=\{g,b,d,z\}, \qquad y_i\in\{0,1\}^{|C|}.
+\]
+Every retained sample has exactly one target initial consonant. The code still uses a four-output interface so that the template methods, MLP, and CNN can share the same evaluation path. A method produces a score vector $s_i\in\mathbb{R}^{|C|}$, and the final label is decoded as
+\[
+\hat c_i=\arg\max_{c\in C}s_{i,c},\qquad
+\hat y_{i,c}=\mathbf{1}[c=\hat c_i].
+\]
+Per-class thresholds are estimated on the development set for compatibility with the multi-output code, but all reported test results use the exclusive four-way decoding above.
+
+The split policy follows the usual train/development/test separation. Training data estimate templates or model weights. Development data choose block length, thresholds, and early stopping. Test data are used once for the final tables. No phone-level boundaries are supplied, so every method must find the useful initial-consonant evidence inside a whole-word recording.
+
+\subsection{Evaluation metrics}
+
+Let $N$ be the number of test samples and $K=|C|$. Label-wise accuracy compares each class bit separately:
+\[
+\mathrm{LabelAcc}
+=\frac{1}{NK}\sum_{i=1}^{N}\sum_{c\in C}\mathbf{1}[\hat y_{i,c}=y_{i,c}].
+\]
+For this one-hot task, label-wise accuracy is higher than ordinary accuracy because it also counts true negatives.
+
+Exact-match accuracy requires the whole label vector to match:
+\[
+\mathrm{ExactMatch}
+=\frac{1}{N}\sum_{i=1}^{N}\mathbf{1}[\hat y_i=y_i].
+\]
+Here it is the standard four-class accuracy, so the result tables treat it as the main metric.
+
+For each label $c$, precision, recall, and F1 are
+\[
+P_c=\frac{TP_c}{TP_c+FP_c},\qquad
+R_c=\frac{TP_c}{TP_c+FN_c},\qquad
+F1_c=\frac{2P_cR_c}{P_c+R_c}.
+\]
+Macro-F1 averages the four class-level F1 scores:
+\[
+\mathrm{MacroF1}=\frac{1}{K}\sum_{c\in C}F1_c.
+\]
+This metric shows whether one consonant class is being sacrificed.
+
+Micro-F1 pools the $TP$, $FP$, and $FN$ counts before computing F1:
+\[
+\mathrm{MicroF1}
+=\frac{2\sum_c TP_c}{2\sum_c TP_c+\sum_c FP_c+\sum_c FN_c}.
+\]
+Samples-F1 computes F1 on each sample and then averages:
+\[
+\mathrm{SamplesF1}
+=\frac{1}{N}\sum_{i=1}^{N}
+\frac{2|Y_i\cap \hat Y_i|}{|Y_i|+|\hat Y_i|}.
+\]
+Because every ground-truth and predicted label vector contains one positive class, micro-F1, samples-F1, and exact-match accuracy coincide numerically. They remain in the tables to match the shared evaluation interface.
+
+The report is organized around the most interpretable method first. \texttt{strict\_course\_fft} is the course-constrained baseline: short-time FFT magnitude spectra and normalized correlation. \texttt{course\_filterbank\_corr} is reported as an extended template comparison because it adds log-mel features, onset localization, negative templates, and autocorrelation. The MLP and CNN appear after the signal-processing methods as baselines, not as the definition of the task.
