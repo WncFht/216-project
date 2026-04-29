@@ -1,82 +1,36 @@
-\section{Algorithmic Details}
+\section{Algorithm Structure and Pseudocode}
 
-This appendix summarizes the four implementations used in the report. All methods use 16 kHz, one-second mono WAV files, the label set $C=\{g,b,d,z\}$, and the same train/development/test roles.
+This appendix summarizes the four implementations used in the report in a reproducible form. All methods use the same input setting: 16 kHz, 1 s, mono WAV recordings, the label set $C=\{g,b,d,z\}$, and one shared train/development/test split in which the three subsets are used only for training, model selection, and final testing, respectively.
 
 \subsection{\texttt{strict\_course\_fft}}
 \label{alg:strict-course}
 
-\textbf{Assumption.} Each initial voiced consonant can be represented by a short-time FFT magnitude-spectrum prototype. A maximum-energy block approximates the local evidence for the initial consonant, and normalized correlation reduces level differences.
-
-\textbf{Procedure.}
-\begin{enumerate}[nosep]
-    \item Frame each training waveform with 20 ms windows, 10 ms hops, and a 512-point FFT.
-    \item Compute the normalized magnitude-spectrum descriptor $P_i^{(r)}$ for each candidate $M$-frame block.
-    \item For each positive training sample, select the maximum-energy block $P_i^{(\star)}$.
-    \item For each class $c$, average same-class $P_i^{(\star)}$ descriptors and normalize the result to obtain $T_c$.
-    \item Select $M\in\{3,4,5,6\}$ on the development set by exact-match accuracy.
-    \item Re-estimate templates on train+development using the selected block length.
-    \item At test time, compute $s_{i,c}=\max_r\cos(P_i^{(r)},T_c)$ over all candidate blocks.
-    \item Predict $\hat c_i=\arg\max_c s_{i,c}$.
-\end{enumerate}
+The method assumes that each initial voiced consonant can be represented by a short-time FFT magnitude-spectrum prototype. The maximum-energy block approximates the main local evidence of the initial consonant, and normalized correlation reduces the effect of recording level. In practice, each training waveform is framed with 20 ms windows, 10 ms hops, and a 512-point FFT. The method computes a normalized magnitude-spectrum descriptor $P_i^{(r)}$ for every candidate $M$-frame block, selects the maximum-energy block $P_i^{(\star)}$ from each positive training sample, and averages same-class descriptors to obtain the class template $T_c$. The block length is chosen from $M\in\{3,4,5,6\}$ on the development set by exact-match accuracy, after which the templates are re-estimated from the training and development sets. At test time, the method slides over all candidate blocks, computes $s_{i,c}=\max_r\cos(P_i^{(r)},T_c)$, and predicts $\hat c_i=\arg\max_c s_{i,c}$.
 
 \subsection{\texttt{course\_filterbank\_corr}}
 \label{alg:course-filterbank}
 
-\textbf{Assumption.} The onset neighborhood is more reliable than whole-word averaging. Positive-negative template differences reduce shared spectral energy, and envelope autocorrelation helps separate sustained frication from short stop releases.
-
-\textbf{Procedure.}
-\begin{enumerate}[nosep]
-    \item Frame the audio with 25 ms windows and 10 ms hops, then compute a 40-bin log-mel spectrogram.
-    \item Estimate onset $o_i$ from the smoothed frame-energy curve.
-    \item Extract 16-frame candidate windows using offsets $\Delta\in\{-2,0,2\}$.
-    \item Split each window into three segments and concatenate raw segment means with baseline-subtracted segment means to form $\phi_i^{(\Delta)}$.
-    \item Compute a 24-lag normalized autocorrelation vector $a_i^{(\Delta)}$ from the same window's energy envelope.
-    \item For each class, average positive and negative training features to obtain $P_c^+$, $P_c^-$, $A_c^+$, and $A_c^-$.
-    \item Score each offset with $0.65[\cos(\phi,P_c^+)-\cos(\phi,P_c^-)]+0.35[\cos(a,A_c^+)-\cos(a,A_c^-)]$.
-    \item Use the maximum score over the three offsets as $s_{i,c}$, then predict $\arg\max_c s_{i,c}$.
-\end{enumerate}
+This method assumes that a local log-mel window near the onset is more reliable than a whole-word average, that positive-negative template contrast suppresses energy shared across classes, and that energy-envelope autocorrelation helps distinguish sustained frication from short stop releases. The waveform is first framed with 25 ms windows and 10 ms hops to produce a 40-bin log-mel spectrogram. The onset $o_i$ is estimated from the smoothed frame-energy curve. Three candidate 16-frame windows are then extracted with offsets $\Delta\in\{-2,0,2\}$. Each local window is divided into three segments, and the method concatenates raw segment means with baseline-subtracted segment means to form $\phi_i^{(\Delta)}$. It also computes a 24-lag normalized autocorrelation vector $a_i^{(\Delta)}$ from the same local window. For each class, the training set is used to average positive and negative samples separately, which yields $P_c^+$, $P_c^-$, $A_c^+$, and $A_c^-$. The score at each offset is computed as $0.65[\cos(\phi,P_c^+)-\cos(\phi,P_c^-)]+0.35[\cos(a,A_c^+)-\cos(a,A_c^-)]$. The maximum over the three offsets becomes $s_{i,c}$, and the final prediction is $\arg\max_c s_{i,c}$.
 
 \subsection{\texttt{mlp\_ai}}
 \label{alg:mlp-ai}
 
-\textbf{Assumption.} MFCC means, standard deviations, delta-MFCC statistics, and coarse band energies summarize enough whole-word acoustic information for a two-layer nonlinear classifier.
-
-\textbf{Structure.}
+This model assumes that the mean and standard deviation of MFCCs, the statistics of delta MFCCs, and coarse band-energy features already summarize the main acoustic differences in the whole word. The network structure is
 \[
 62\rightarrow128\rightarrow64\rightarrow4.
 \]
-Hidden layers use ReLU activations, and the output layer uses sigmoid probabilities. Training uses Adam, early stopping, and $L_2$ regularization. The development set selects thresholds, while test-time four-way classification uses $\arg\max$.
-
-\textbf{Procedure.}
-\begin{enumerate}[nosep]
-    \item Extract MFCC statistics, delta-MFCC statistics, and 10-dimensional band energy from each recording.
-    \item Standardize features using the training-set mean and variance.
-    \item Train the two-layer MLP with binary cross entropy over four labels.
-    \item Estimate per-label thresholds on the development set while preserving exclusive decoding.
-    \item On the test set, output four probabilities and choose the largest one.
-\end{enumerate}
+The hidden layers use ReLU, and the output layer uses sigmoid probabilities. Training uses Adam, early stopping, and $L_2$ regularization. The procedure first extracts MFCC statistics, delta-MFCC statistics, and 10-dimensional band energy from each recording. It then standardizes the features with the mean and variance of the training set, trains the two-layer MLP with binary cross entropy over the four labels, estimates per-class thresholds on the development set while preserving exclusive decoding, and finally outputs four probabilities on the test set and selects the largest one.
 
 \subsection{\texttt{cnn\_ai}}
 \label{alg:cnn-ai}
 
-\textbf{Assumption.} A log-mel spectrogram can be treated as a time-frequency image, and convolutional layers can learn useful local acoustic patterns without a hand-specified onset window. The assumption requires enough data for the model to ignore irrelevant positions.
-
-\textbf{Structure.}
+This model assumes that the log-mel spectrogram can be treated as a time-frequency image and that convolutional layers can learn useful local acoustic patterns from the whole word without a hand-designed onset window. The structure is
 \[
 \begin{aligned}
-&\mathrm{Conv}_{24}\rightarrow\mathrm{BN}\rightarrow\mathrm{ReLU}\rightarrow\mathrm{Pool} \\
-&\rightarrow\mathrm{Conv}_{48}\rightarrow\mathrm{BN}\rightarrow\mathrm{ReLU}\rightarrow\mathrm{Pool} \\
-&\rightarrow\mathrm{Conv}_{96}\rightarrow\mathrm{BN}\rightarrow\mathrm{ReLU}
-\rightarrow\mathrm{GlobalAvgPool} \\
+&\mathrm{Conv}_{24}\rightarrow\mathrm{BN}\rightarrow\mathrm{ReLU}\rightarrow\mathrm{Pool}\\
+&\rightarrow\mathrm{Conv}_{48}\rightarrow\mathrm{BN}\rightarrow\mathrm{ReLU}\rightarrow\mathrm{Pool}\\
+&\rightarrow\mathrm{Conv}_{96}\rightarrow\mathrm{BN}\rightarrow\mathrm{ReLU}\rightarrow\mathrm{GlobalAvgPool}\\
 &\rightarrow\mathrm{FC}_{96}\rightarrow\mathrm{Dropout}\rightarrow\mathrm{FC}_{4}.
 \end{aligned}
 \]
-
-\textbf{Procedure.}
-\begin{enumerate}[nosep]
-    \item Extract whole-word log-mel spectrograms and standardize them with the training-set global mean and variance.
-    \item Feed the spectrograms as single-channel inputs to the three-stage convolutional network.
-    \item Train with positive-weighted \texttt{BCEWithLogitsLoss} and AdamW.
-    \item After each epoch, compute development macro-F1 and keep the best checkpoint.
-    \item On the test set, apply sigmoid to the logits and choose the largest probability class.
-\end{enumerate}
+The procedure first extracts whole-word log-mel spectrograms and standardizes them with the global mean and variance of the training set. The spectrograms are then passed as single-channel inputs into the three-stage convolutional network. Training uses positive-weighted \texttt{BCEWithLogitsLoss} and AdamW. After each epoch, the model is evaluated on the development set by macro-F1, and the checkpoint with the best development performance is kept. At test time, the logits are converted into sigmoid probabilities, and the class with the largest probability is selected.

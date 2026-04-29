@@ -1,57 +1,57 @@
-\section{Introduction and Problem Formulation}
+\section{Problem Definition, Experimental Setting, and Metrics}
 
-The original project asks for spectral analysis of voiced consonants and a program that detects selected letters in spoken words. This report treats the task as four-way initial-consonant recognition rather than general word recognition. Each recording is a one-second, 16 kHz waveform $x_i[n]$. The class set is
+Let $x_i[n]$ denote the $i$th waveform. All recordings are resampled to $16$ kHz and trimmed or padded to $1$ s. The label set is
 \[
 C=\{g,b,d,z\}, \qquad y_i\in\{0,1\}^{|C|}.
 \]
-Every retained sample has exactly one target initial consonant. The code still uses a four-output interface so that the template methods, MLP, and CNN can share the same evaluation path. A method produces a score vector $s_i\in\mathbb{R}^{|C|}$, and the final label is decoded as
+The task is single-label four-class classification, and each sample has exactly one initial voiced consonant label. To keep one shared evaluation pipeline for the template methods, the MLP, and the CNN, each method first outputs a score vector $s_i\in\mathbb{R}^{|C|}$ and then decodes it into a predicted label $\hat y_i$. Since every sample satisfies $\sum_c y_{i,c}=1$, the reported evaluation uses exclusive decoding:
 \[
 \hat c_i=\arg\max_{c\in C}s_{i,c},\qquad
 \hat y_{i,c}=\mathbf{1}[c=\hat c_i].
 \]
-Per-class thresholds are estimated on the development set for compatibility with the multi-output code, but all reported test results use the exclusive four-way decoding above.
+Per-class thresholds are still estimated on the development set because the code keeps a multi-output interface, but all test results in the report use the single-label decoding above.
 
-The split policy follows the usual train/development/test separation. Training data estimate templates or model weights. Development data choose block length, thresholds, and early stopping. Test data are used once for the final tables. No phone-level boundaries are supplied, so every method must find the useful initial-consonant evidence inside a whole-word recording.
+All methods use the same train/development/test split. The training set is used only to estimate templates or train model parameters. The development set is used only to choose hyperparameters, thresholds, and early stopping. The test set is used only for the final metrics. No manual phone segmentation is provided, so every method has to locate useful evidence near the beginning of the word from the whole-word recording.
 
 \subsection{Evaluation metrics}
 
-Let $N$ be the number of test samples and $K=|C|$. Label-wise accuracy compares each class bit separately:
+Let $N$ be the number of test samples and let $K=|C|$. Label-wise accuracy compares each class bit separately:
 \[
 \mathrm{LabelAcc}
 =\frac{1}{NK}\sum_{i=1}^{N}\sum_{c\in C}\mathbf{1}[\hat y_{i,c}=y_{i,c}].
 \]
-For this one-hot task, label-wise accuracy is higher than ordinary accuracy because it also counts true negatives.
+This metric is equal to $1$ minus Hamming loss. Because it rewards both true positives and true negatives, its value is higher than exact-match accuracy in a single-label task.
 
-Exact-match accuracy requires the whole label vector to match:
+Exact-match accuracy requires the whole label vector to be correct:
 \[
 \mathrm{ExactMatch}
 =\frac{1}{N}\sum_{i=1}^{N}\mathbf{1}[\hat y_i=y_i].
 \]
-Here it is the standard four-class accuracy, so the result tables treat it as the main metric.
+Under the one-hot label setting used here, this metric is the standard four-class accuracy and serves as the main metric in the report.
 
-For each label $c$, precision, recall, and F1 are
+For each class $c$, precision, recall, and F1 are defined as
 \[
 P_c=\frac{TP_c}{TP_c+FP_c},\qquad
 R_c=\frac{TP_c}{TP_c+FN_c},\qquad
 F1_c=\frac{2P_cR_c}{P_c+R_c}.
 \]
-Macro-F1 averages the four class-level F1 scores:
+Macro-F1 is the average of the four class-level F1 scores:
 \[
 \mathrm{MacroF1}=\frac{1}{K}\sum_{c\in C}F1_c.
 \]
-This metric shows whether one consonant class is being sacrificed.
+It does not weight classes by sample count, so it shows clearly whether one of /g/, /b/, /d/, and /z/ is sacrificed.
 
-Micro-F1 pools the $TP$, $FP$, and $FN$ counts before computing F1:
+Micro-F1 first pools all $TP$, $FP$, and $FN$ counts and then computes F1:
 \[
 \mathrm{MicroF1}
 =\frac{2\sum_c TP_c}{2\sum_c TP_c+\sum_c FP_c+\sum_c FN_c}.
 \]
-Samples-F1 computes F1 on each sample and then averages:
+Samples-F1 computes F1 for each sample and then averages over samples:
 \[
 \mathrm{SamplesF1}
 =\frac{1}{N}\sum_{i=1}^{N}
 \frac{2|Y_i\cap \hat Y_i|}{|Y_i|+|\hat Y_i|}.
 \]
-Because every ground-truth and predicted label vector contains one positive class, micro-F1, samples-F1, and exact-match accuracy coincide numerically. They remain in the tables to match the shared evaluation interface.
+Because both the ground-truth label and the predicted label contain exactly one active class, micro-F1, samples-F1, and exact-match accuracy have the same numerical value here. These metrics remain in the tables because the evaluation code uses one shared interface.
 
-The report is organized around the most interpretable method first. \texttt{strict\_course\_fft} is the course-constrained baseline: short-time FFT magnitude spectra and normalized correlation. \texttt{course\_filterbank\_corr} is reported as an extended template comparison because it adds log-mel features, onset localization, negative templates, and autocorrelation. The MLP and CNN appear after the signal-processing methods as baselines, not as the definition of the task.
+The report compares three groups of methods in sequence. It first introduces our method, which uses short-time FFT templates. It then presents the AI reimplementation, which uses a stronger spectral representation and a more local detection strategy. The MLP and CNN appear last as neural baselines so that the main line of the report remains focused on the acoustic evidence itself.

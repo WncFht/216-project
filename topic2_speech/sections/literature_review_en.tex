@@ -1,15 +1,19 @@
-\section{Related Work}
+\section{Related Work and Theoretical Background}
 
-The task studied here is closer to local acoustic-event detection than to large-vocabulary speech recognition. The classifier only needs to decide which initial voiced consonant begins a short word. That makes short-time spectral analysis and template matching a useful starting point.
+The task studied here is not large-vocabulary recognition. It asks whether a short spoken word begins with one target consonant and, if so, which consonant it is. This setting is closer to short-time analysis, local spectral comparison, and template matching in classical speech processing. The data also come from MSWC, which is a word-level speech corpus designed for keyword spotting and spoken term search\cite{mazumder2021mswc}.
 
-\subsection{Short-time speech representations}
+\subsection{Short-time analysis and spectral representation}
 
-Davis and Mermelstein showed that speech front ends gain stability by replacing raw waveforms with short-time parameterized spectra\cite{davis1980}. The usual pipeline frames the waveform over tens of milliseconds, applies a window, transforms each frame, and keeps the frequency-domain energy pattern. This representation preserves releases, frication, and vowel transitions while reducing sensitivity to raw waveform phase.
+Davis and Mermelstein show that useful speech front ends do not rely on the raw waveform alone. They rely on short-time parameterized representations obtained after framing and spectral analysis\cite{davis1980}. The procedure is simple: the waveform is split into frames of a few tens of milliseconds, each frame is windowed, and a Fourier transform is applied. The resulting spectrum preserves local cues such as stop release, frication, and vowel transition, while reducing the instability of the raw waveform.
 
-Rabiner's HMM tutorial connects frame-level features with temporal modeling\cite{rabiner1989}. The relevant point for this report is that speech evidence moves over time. Even without using an HMM, an initial-consonant detector should search a short region near the beginning of the word rather than average the whole recording into one global descriptor.
+Rabiner's tutorial on hidden Markov models connects these frame-level features with temporal modeling\cite{rabiner1989}. The important point here is that speech is not a static image. Useful evidence lies in how local structure changes over time. Even though this report does not use HMMs, the same idea still matters. If the goal is to detect an initial consonant inside a whole-word recording, it is more suitable to search a short region near the beginning of the word than to average the whole recording into one global descriptor.
 
-\subsection{Why consonants need local evidence}
+\subsection{Why consonant detection depends on local spectral evidence}
 
-The four target classes have different time-frequency behavior. /g/, /b/, and /d/ are voiced stops with short releases and fast transitions. /z/ is a voiced fricative with longer high-frequency energy. Whole-word averaging can bury these cues under the following vowel and speaker variation. Wilkinson and Russell's TIMIT phone-recognition work also points to the value of local formant and boundary-related evidence for phone discrimination\cite{wilkinson2002}.
+For /g/, /b/, /d/, and /z/, the most useful evidence often appears in a short initial segment. The release of a stop consonant is brief and changes fast, whereas a fricative tends to keep high-frequency energy for a longer time. Once these cues are averaged over the whole word, much of the information disappears. Wilkinson and Russell report a similar pattern in phone recognition on TIMIT: local evidence near acoustic boundaries carries strong value for consonant discrimination\cite{wilkinson2002}.
 
-For that reason, the main method starts with the tools closest to the course material: short-time FFT, local magnitude spectra, and normalized correlation. More complex baselines are useful only after the acoustic evidence has been made explicit.
+For this reason, the main method in this report does not begin with a complex model. It begins with the most direct signal-processing tools: short-time FFT, local spectra, and normalized correlation. The purpose is not to claim that a simpler method is stronger. The purpose is to make the structure of the task visible before stronger models are introduced.
+
+\subsection{Why the report begins with our method}
+
+Keyword spotting studies often use small DNN or CNN models\cite{chen2014kws,sainath2015}, finite-vocabulary benchmarks such as Speech Commands\cite{warden2018}, transformer models and self-supervised speech representations\cite{berg2021,baevski2020,hsu2021hubert,chen2022wavlm,gao2023}, and streaming open-vocabulary detection\cite{kim2025}. This report still introduces our method first, then presents the AI reimplementation, and finally adds the MLP and CNN baselines. This order makes it easier to explain the spectral cues near the word onset before comparing the gains brought by stronger models.

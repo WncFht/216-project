@@ -1,143 +1,143 @@
-\section{Experimental Results}
+\section{Experimental Results and Comparison}
 
-\subsection{Course-constrained baseline}
+\subsection{Our method}
 
-The strict FFT template method is evaluated first because it is the main signal-processing baseline. In a one-hot four-class task, exact-match accuracy is the direct metric; label-wise accuracy is included only for consistency with the shared evaluation code.
+We first examine our short-time FFT template method. Since the task is single-label four-class classification, exact-match accuracy is the most direct metric, while label-wise accuracy is only a supplementary reference.
 
-The strict method uses two course-compatible refinements. It no longer builds templates from only the four case clips. Instead, it averages maximum-energy blocks from same-class training samples and then re-estimates the templates on train+development after choosing the block length. The development set selects a three-frame block.
+This method no longer uses only four representative case recordings as templates. It first averages the maximum-energy blocks of same-class samples in the training set and then re-estimates the final templates from the training and development sets after the block length is selected. The block length is chosen from 3 to 6 frames on the development set, and the selected value is 5. Because the data cover 300 words, cross-word and speaker variation are large, so FFT magnitude correlation alone cannot fully separate the four initial consonants. Even so, the method keeps a clear spectral interpretation.
 
 \begin{table}[H]
     \centering
-    \caption{Main metrics for the course-constrained FFT template method.}
+    \caption{Main metrics of our short-time FFT template method.}
     \label{tab:strict-main}
     \begin{tabular}{lccccc}
         \toprule
         Method & Label acc. & Exact match & Macro-F1 & Micro-F1 & Samples-F1 \\
         \midrule
-        strict\_course\_fft & 0.6717 & 0.3433 & 0.3368 & 0.3433 & 0.3433 \\
+        Our method & 0.6327 & 0.2655 & 0.2439 & 0.2655 & 0.2655 \\
         \bottomrule
     \end{tabular}
 \end{table}
 
 \begin{table}[H]
     \centering
-    \caption{Per-label F1 for the course-constrained FFT template method.}
+    \caption{Per-class F1 of our short-time FFT template method.}
     \label{tab:strict-per-label}
     \begin{tabular}{lcccc}
         \toprule
         Method & /g/ & /b/ & /d/ & /z/ \\
         \midrule
-        strict\_course\_fft & 0.250 & 0.377 & 0.345 & 0.375 \\
+        Our method & 0.217 & 0.163 & 0.243 & 0.353 \\
         \bottomrule
     \end{tabular}
 \end{table}
 
-Figure~\ref{fig:strict-score-dist} shows that positive and negative score distributions are separated but still overlap. The strict method captures meaningful spectral evidence, but the evidence is not strong enough for stable four-class recognition.
+Figure~\ref{fig:strict-score-dist} gives the score distributions for the four classes. Positive and negative samples show some separation, but the overlap is still large. This pattern indicates that short-time FFT templates alone are not stable enough for four-class recognition.
 
 \begin{figure}[H]
     \centering
     \begin{minipage}{0.48\textwidth}
         \centering
-        \includegraphics[width=\linewidth]{figures/mswc_course_gbdz_local_patch_v1/strict_course/score_distribution_g.png}
+        \includegraphics[width=\linewidth]{figures/mswc_course_gbdz_75w_cap40_5_5/strict_course/score_distribution_g.png}
         \small /g/
     \end{minipage}\hfill
     \begin{minipage}{0.48\textwidth}
         \centering
-        \includegraphics[width=\linewidth]{figures/mswc_course_gbdz_local_patch_v1/strict_course/score_distribution_b.png}
+        \includegraphics[width=\linewidth]{figures/mswc_course_gbdz_75w_cap40_5_5/strict_course/score_distribution_b.png}
         \small /b/
     \end{minipage}
 
     \vspace{0.5em}
     \begin{minipage}{0.48\textwidth}
         \centering
-        \includegraphics[width=\linewidth]{figures/mswc_course_gbdz_local_patch_v1/strict_course/score_distribution_d.png}
+        \includegraphics[width=\linewidth]{figures/mswc_course_gbdz_75w_cap40_5_5/strict_course/score_distribution_d.png}
         \small /d/
     \end{minipage}\hfill
     \begin{minipage}{0.48\textwidth}
         \centering
-        \includegraphics[width=\linewidth]{figures/mswc_course_gbdz_local_patch_v1/strict_course/score_distribution_z.png}
+        \includegraphics[width=\linewidth]{figures/mswc_course_gbdz_75w_cap40_5_5/strict_course/score_distribution_z.png}
         \small /z/
     \end{minipage}
-    \caption{Score distributions from \texttt{strict\_course\_fft} for the four labels.}
+    \caption{Score distributions of our method on the four classes.}
     \label{fig:strict-score-dist}
 \end{figure}
 
-\subsection{Extended template comparison}
+\subsection{AI reimplementation comparison}
 
-\texttt{course\_filterbank\_corr} adds onset localization, log-mel positive-negative template differences, and envelope autocorrelation. These changes move beyond the strict course boundary, so the method is reported as an extended comparison.
+Beyond our method, the report also includes an AI reimplementation. It does not simply replace the classifier. It redoes the first two stages of the pipeline: it first uses log-mel features and energy change to obtain a more stable local spectrum near the word onset, and then uses positive-negative template differences and autocorrelation for detection.
 
 \begin{table}[H]
     \centering
     \small
     \setlength{\tabcolsep}{4pt}
-    \caption{Overall comparison between the course-constrained and extended template methods.}
+    \caption{Overall comparison between our method and the AI reimplementation.}
     \label{tab:course-compare}
     \begin{tabular}{lccccc}
         \toprule
         Method & Label acc. & Exact match & Macro-F1 & Micro-F1 & Samples-F1 \\
         \midrule
-        strict\_course\_fft & 0.6717 & 0.3433 & 0.3368 & 0.3433 & 0.3433 \\
-        course\_filterbank\_corr & 0.7750 & 0.5500 & 0.5462 & 0.5500 & 0.5500 \\
+        Our method & 0.6327 & 0.2655 & 0.2439 & 0.2655 & 0.2655 \\
+        AI reimplementation & 0.7513 & 0.5026 & 0.4974 & 0.5026 & 0.5026 \\
         \bottomrule
     \end{tabular}
 \end{table}
 
 \begin{table}[H]
     \centering
-    \caption{Per-label F1 for the course-constrained and extended template methods.}
+    \caption{Per-class F1 of our method and the AI reimplementation.}
     \label{tab:course-per-label}
     \begin{tabular}{lcccc}
         \toprule
         Method & /g/ & /b/ & /d/ & /z/ \\
         \midrule
-        strict\_course\_fft & 0.250 & 0.377 & 0.345 & 0.375 \\
-        course\_filterbank\_corr & 0.438 & 0.528 & 0.472 & 0.747 \\
+        Our method & 0.217 & 0.163 & 0.243 & 0.353 \\
+        AI reimplementation & 0.464 & 0.359 & 0.429 & 0.737 \\
         \bottomrule
     \end{tabular}
 \end{table}
 
-The extended method improves exact-match accuracy from 0.343 to 0.550. The largest gain appears for /z/, whose sustained frication is well matched by log-mel local templates and autocorrelation. /g/ remains the weakest class, consistent with its short burst and higher alignment sensitivity.
+The gain of the AI reimplementation mainly comes from two changes. It narrows the search range more precisely to the region near the word onset, and it adds explicit positive-negative template contrast inside the local window. The largest gain appears on /z/, which suggests that sustained frication is more stable under local log-mel templates and autocorrelation. The overlap between /b/ and /d/ remains strong, which means that short stop releases and alignment error still weaken the template evidence.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.95\textwidth]{figures/mswc_course_gbdz_local_patch_v1/letter_examples.png}
-    \caption{Representative examples used by the extended template pipeline.}
+    \includegraphics[width=0.95\textwidth]{figures/mswc_course_gbdz_75w_cap40_5_5/letter_examples.png}
+    \caption{Four representative samples used in the AI reimplementation.}
     \label{fig:ext-examples}
 \end{figure}
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.90\textwidth]{figures/mswc_course_gbdz_local_patch_v1/template_grid.png}
-    \caption{Average log-mel templates for the four classes. This view shows class-level energy patterns; it is separate from the positive-negative contrast templates used in scoring.}
+    \includegraphics[width=0.90\textwidth]{figures/mswc_course_gbdz_75w_cap40_5_5/template_grid.png}
+    \caption{Average log-mel template view used for the AI reimplementation. The figure shows the mean spectrogram of each class. It is not identical to the positive-negative contrast templates, but it helps display the energy pattern near the word onset.}
     \label{fig:ext-template-grid}
 \end{figure}
 
-Figure~\ref{fig:course-score-dist} gives the test score distributions for the extended method. /z/ shows the clearest positive-negative separation. /g/, /b/, and /d/ still overlap, which explains why onset localization helps but does not remove stop-consonant confusion.
+Figure~\ref{fig:course-score-dist} gives the test score distributions of the AI reimplementation for each class. Compared with our method, /z/ shows the clearest separation between positive and negative samples. The classes /g/, /b/, and /d/ still overlap strongly, which explains why the AI reimplementation improves the results but does not remove confusion among stop consonants.
 
 \begin{figure}[H]
     \centering
     \begin{minipage}{0.48\textwidth}
         \centering
-        \includegraphics[width=\linewidth]{figures/mswc_course_gbdz_local_patch_v1/course_filterbank_corr/score_distribution_g.png}
+        \includegraphics[width=\linewidth]{figures/mswc_course_gbdz_75w_cap40_5_5/course_filterbank_corr/score_distribution_g.png}
         \small /g/
     \end{minipage}\hfill
     \begin{minipage}{0.48\textwidth}
         \centering
-        \includegraphics[width=\linewidth]{figures/mswc_course_gbdz_local_patch_v1/course_filterbank_corr/score_distribution_b.png}
+        \includegraphics[width=\linewidth]{figures/mswc_course_gbdz_75w_cap40_5_5/course_filterbank_corr/score_distribution_b.png}
         \small /b/
     \end{minipage}
 
     \vspace{0.5em}
     \begin{minipage}{0.48\textwidth}
         \centering
-        \includegraphics[width=\linewidth]{figures/mswc_course_gbdz_local_patch_v1/course_filterbank_corr/score_distribution_d.png}
+        \includegraphics[width=\linewidth]{figures/mswc_course_gbdz_75w_cap40_5_5/course_filterbank_corr/score_distribution_d.png}
         \small /d/
     \end{minipage}\hfill
     \begin{minipage}{0.48\textwidth}
         \centering
-        \includegraphics[width=\linewidth]{figures/mswc_course_gbdz_local_patch_v1/course_filterbank_corr/score_distribution_z.png}
+        \includegraphics[width=\linewidth]{figures/mswc_course_gbdz_75w_cap40_5_5/course_filterbank_corr/score_distribution_z.png}
         \small /z/
     \end{minipage}
-    \caption{Score distributions from \texttt{course\_filterbank\_corr} for the four labels.}
+    \caption{Score distributions of the AI reimplementation on the four classes.}
     \label{fig:course-score-dist}
 \end{figure}

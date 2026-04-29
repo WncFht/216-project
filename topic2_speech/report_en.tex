@@ -18,19 +18,16 @@
 \captionsetup{font=small}
 \sloppy
 
-\title{Detecting Initial /g/, /b/, /d/, and /z/ in MSWC English:\\
-\large A Course-Constrained Spectral Template Method with Extended Baselines}
-\author{Heng Qiao}
+\title{Initial Voiced Consonant Detection and Spectral Analysis in MSWC English}
+\author{Haotian Fang \quad Ziheng Yuan}
 \date{April 29, 2026}
 
 \begin{document}
 \maketitle
 
 \begin{abstract}
-This report reformulates VE216 Project Topic 2 as a controlled initial-consonant detection problem. From MSWC English, the subset keeps only words whose first letter is \texttt{g}, \texttt{b}, \texttt{d}, or \texttt{z} and whose first non-vowel ARPABET phone is the matching consonant. The resulting corpus contains 60 words and 3000 utterances. The main method, \texttt{strict\_course\_fft}, uses short-time framing, FFT magnitude spectra, maximum-energy blocks, normalized correlation, and a sliding maximum score. It reaches 0.343 exact-match accuracy on the four-way test set. An extended template method, \texttt{course\_filterbank\_corr}, adds log-mel localization, positive-negative templates, and envelope autocorrelation, raising exact-match accuracy to 0.550. A feature MLP reaches 0.527, while a small CNN reaches 0.320. The results show that /z/ is the easiest class because its frication persists over time, while /g/ is the hardest because its burst is short and sensitive to alignment. The main value of the study is an interpretable signal-processing pipeline that makes the acoustic evidence visible before comparing stronger baselines.
+This report studies the VE216 Project Topic 2 speech analysis task and focuses on the initial voiced consonants /g/, /b/, /d/, and /z/. The data come from MSWC English. We keep only words whose first letter is \texttt{g/b/d/z} and whose first non-vowel phone is the matching \texttt{G/B/D/Z}. Because the /z/ class contains only 75 eligible words, the final dataset uses 75 words per class, for a total of 300 words and 6796 utterances. We first present a detection method based on short-time FFT magnitude spectra and normalized correlation. We then present an AI reimplementation that uses log-mel features, onset localization, positive-negative templates, and autocorrelation. Finally, we compare both template methods with an MLP and a CNN. On the test set, exact-match accuracy is 0.265 for our method, 0.503 for the AI reimplementation, 0.485 for the MLP, and 0.559 for the CNN.
 \end{abstract}
-
-\noindent\textbf{Keywords:} speech analysis; voiced consonants; short-time Fourier transform; template matching; keyword spotting; MSWC.
 
 \input{sections/problem_definition_en.tex}
 \input{sections/literature_review_en.tex}
@@ -54,6 +51,9 @@ L. R. Rabiner, ``A Tutorial on Hidden Markov Models and Selected Applications in
 
 \bibitem{wilkinson2002}
 N. J. Wilkinson and M. J. Russell, ``Improved Phone Recognition on TIMIT Using Formant Frequency Data and Confidence Measures,'' in \textit{Proc. ICSLP 2002}. \url{https://www.isca-archive.org/icslp_2002/wilkinson02_icslp.html}.
+
+\bibitem{mazumder2021mswc}
+M. Mazumder \textit{et al.}, ``Multilingual Spoken Words Corpus,'' in \textit{Proc. NeurIPS Datasets and Benchmarks}, 2021. \url{https://datasets-benchmarks-proceedings.neurips.cc/paper/2021/hash/fe131d7f5a6b38b23cc967316c13dae2-Abstract-round2.html}.
 
 \bibitem{chen2014kws}
 G. Chen, C. Parada, and G. Heigold, ``Small-Footprint Keyword Spotting using Deep Neural Networks,'' in \textit{Proc. ICASSP 2014}. \url{https://research.google/pubs/small-footprint-keyword-spotting-using-deep-neural-networks/}.

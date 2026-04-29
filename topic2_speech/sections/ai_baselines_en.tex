@@ -1,10 +1,10 @@
-\section{Neural and Statistical Baselines}
+\section{Neural Baselines and Training Curves}
 
-The baselines in this section compare the template methods with two learned classifiers: a feature-based MLP and a small CNN. Both models train on the training split, use the development split for thresholding or early stopping, and report final metrics on the test split. Although the task is one-hot four-way classification, both models keep the same four-output interface as the template methods and use $\arg\max$ for the final label.
+After presenting our method and the AI reimplementation, this section adds the MLP and CNN as neural baselines. Both models use the same data split: the training set is used for parameter learning, the development set is used for threshold selection or early stopping, and the test set is used only for the final evaluation. The final prediction is obtained by $\arg\max$ over the four output scores.
 
-\subsection{MLP on MFCC and band-energy statistics}
+\subsection{MLP: MFCC and band-energy statistics}
 
-The MLP does not take a full spectrogram as input. It uses a fixed vector of summary features. For each recording, the pipeline computes log-mel features, extracts 13 MFCC coefficients and their first-order differences, and concatenates
+The MLP does not take the full spectrogram as input. It uses handcrafted summary features. For each utterance, the pipeline computes log-mel features, extracts 13-dimensional MFCCs and their first-order differences, and concatenates five parts:
 \[
 z_i=
 \left[
@@ -15,25 +15,25 @@ z_i=
 \mathrm{bandEnergy}
 \right].
 \]
-The first four groups contribute $13\times4=52$ dimensions. The band-energy block contributes 10 more, so $z_i\in\mathbb{R}^{62}$. The features are standardized with the training-set mean and variance.
+The first four parts contribute $13\times4=52$ dimensions, and the band-energy term contributes 10 more, so $z_i\in\mathbb{R}^{62}$. All features are standardized by the mean and variance of the training set before learning begins.
 
-The network has two hidden layers:
+The model is a two-hidden-layer feedforward network:
 \[
 h_1=\mathrm{ReLU}(W_1z_i+b_1),\qquad
 h_2=\mathrm{ReLU}(W_2h_1+b_2),\qquad
 p_i=\sigma(W_3h_2+b_3),
 \]
-with widths 128 and 64. The loss is binary cross entropy over the four output labels plus $L_2$ regularization:
+where the hidden widths are $128$ and $64$. The training loss is binary cross entropy over the four labels with an $L_2$ penalty:
 \[
 \mathcal{L}_{\mathrm{MLP}}
 =-\sum_{i,c}\left[y_{i,c}\log p_{i,c}+(1-y_{i,c})\log(1-p_{i,c})\right]
 +\lambda\|\theta\|_2^2.
 \]
-The MLP tests whether whole-word MFCC statistics already contain enough class information. It does not localize the initial consonant, so vowel and speaker differences remain mixed with the target cue. Appendix~\ref{alg:mlp-ai} gives the algorithm.
+The model assumes that whole-word MFCC statistics preserve enough average acoustic information. Since it does not localize the word onset, variation from the following vowel and from different speakers is mixed into the same representation. The algorithm is summarized in Appendix~\ref{alg:mlp-ai}.
 
-\subsection{CNN on whole-word log-mel spectrograms}
+\subsection{CNN: whole-word log-mel spectrograms}
 
-The CNN receives a whole-word log-mel spectrogram $L_i\in\mathbb{R}^{T\times40}$. The input is standardized by the training-set global mean and standard deviation and then passed as a single-channel image. The architecture is
+The CNN directly uses the whole-word log-mel spectrogram. Let the input matrix be $L_i\in\mathbb{R}^{T\times40}$. The matrix is standardized by the global mean and standard deviation of the training set and then treated as a single-channel image. The network structure is
 \[
 \mathrm{Conv}(1,24)\rightarrow \mathrm{BN}\rightarrow \mathrm{ReLU}\rightarrow \mathrm{MaxPool},
 \]
@@ -44,49 +44,79 @@ The CNN receives a whole-word log-mel spectrogram $L_i\in\mathbb{R}^{T\times40}$
 \mathrm{Conv}(48,96)\rightarrow \mathrm{BN}\rightarrow \mathrm{ReLU}\rightarrow
 \mathrm{GlobalAvgPool}\rightarrow \mathrm{FC}(96)\rightarrow \mathrm{Dropout}(0.25)\rightarrow \mathrm{FC}(4).
 \]
-Let the logits be $u_{i,c}$ and probabilities be $p_{i,c}=\sigma(u_{i,c})$. The loss is weighted binary cross entropy:
+The logits are denoted by $u_{i,c}$ and the probabilities by $p_{i,c}=\sigma(u_{i,c})$. The training loss is weighted binary cross entropy:
 \[
 \mathcal{L}_{\mathrm{CNN}}
 =-\sum_{i,c}\alpha_c y_{i,c}\log p_{i,c}
 -(1-y_{i,c})\log(1-p_{i,c}),
 \]
-where $\alpha_c$ is computed from the positive/negative ratio in the training split and clipped to $[1,10]$. Training uses AdamW with learning rate $10^{-3}$, weight decay $10^{-4}$, at most 10 epochs, and development macro-F1 for early stopping.
+where $\alpha_c$ is computed from the class imbalance in the training set and clipped to $[1,10]$. Optimization uses AdamW with learning rate $10^{-3}$, weight decay $10^{-4}$, and model selection by development-set macro-F1.
 
-The CNN lets the model learn local patterns from the whole spectrogram. This assumption needs more data than the 3000-utterance, 60-word corpus provides, and the model is not forced to attend to the word onset.
+The CNN differs from the template methods because it does not define a fixed onset window in advance. Instead, it lets convolutional filters learn local patterns from the whole spectrogram. This assumption needs broader lexical coverage. Once the dataset expands to 300 words and 6796 utterances, the small CNN performs much better than it does in the earlier 60-word setting.
 
 \begin{table}[H]
     \centering
-    \caption{Overall metrics for the learned baselines.}
+    \caption{Overall metrics of the neural baselines.}
     \label{tab:ai-summary}
     \begin{tabular}{lccccc}
         \toprule
         Method & Label acc. & Exact match & Macro-F1 & Micro-F1 & Samples-F1 \\
         \midrule
-        MLP & 0.7633 & 0.5267 & 0.5258 & 0.5267 & 0.5267 \\
-        CNN & 0.6600 & 0.3200 & 0.2219 & 0.3200 & 0.3200 \\
+        MLP & 0.7423 & 0.4845 & 0.4848 & 0.4845 & 0.4845 \\
+        CNN & 0.7796 & 0.5593 & 0.5557 & 0.5593 & 0.5593 \\
         \bottomrule
     \end{tabular}
 \end{table}
 
-The MLP is a useful statistical baseline, but it remains below the extended template method. The CNN trains successfully but performs worse than the strict FFT template on exact-match accuracy. In this dataset, a small end-to-end spectrogram model does not recover the onset cue more reliably than a hand-designed local spectral comparison.
+The MLP is a stable statistical baseline, but it still falls below the AI reimplementation. The CNN benefits from the larger number of word types and training samples, and its exact-match accuracy reaches 0.559, which is higher than the 0.503 of the AI reimplementation. This result shows that once lexical coverage increases, an end-to-end spectrogram model begins to learn some local patterns near the word onset, although it remains weaker than template methods in interpretability.
+
+\begin{table}[H]
+    \centering
+    \caption{CNN epoch ablation.}
+    \label{tab:epoch-ablation}
+    \begin{tabular}{ccccc}
+        \toprule
+        Maximum epoch & Completed epoch & Best dev epoch & Dev macro-F1 & Test exact match \\
+        \midrule
+        5 & 5 & 5 & 0.529 & 0.372 \\
+        10 & 10 & 8 & 0.575 & 0.499 \\
+        15 & 15 & 11 & 0.598 & 0.460 \\
+        20 & 20 & 18 & 0.598 & 0.523 \\
+        25 & 25 & 25 & 0.608 & 0.559 \\
+        30 & 30 & 26 & 0.614 & 0.541 \\
+        40 & 34 & 26 & 0.614 & 0.541 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+In terms of development-set macro-F1, the 30-epoch and 40-epoch settings both reach their best point near epoch 26, but the 40-epoch setting stops early at epoch 34 and brings no extra gain. In terms of test-set exact-match accuracy, the 25-epoch setting is the best. For this reason, the report uses 25 epochs as the final CNN configuration and treats the range from 25 to 30 epochs as a suitable training interval for the current data scale.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.92\textwidth]{figures/mswc_course_gbdz_local_patch_v1/cnn_history.png}
-    \caption{CNN training history.}
+    \includegraphics[width=0.92\textwidth]{figures/mswc_course_gbdz_75w_cap40_5_5/cnn_history.png}
+    \caption{CNN training curves.}
     \label{fig:cnn-history}
 \end{figure}
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.92\textwidth]{figures/mswc_course_gbdz_local_patch_v1/metric_summary.png}
-    \caption{Overall metric summary for all methods.}
+    \includegraphics[width=0.86\textwidth]{figures/mswc_course_gbdz_75w_cap40_5_5/cnn_epoch_ablation.png}
+    \caption{CNN maximum-epoch ablation. Test exact-match accuracy peaks at 25 epochs, while development-set macro-F1 is slightly higher at 30 or 40 epochs and does not improve the test result.}
+    \label{fig:cnn-epoch-ablation}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth]{figures/mswc_course_gbdz_75w_cap40_5_5/metric_summary.png}
+    \caption{Overall metric summary of all methods.}
     \label{fig:metric-summary}
 \end{figure}
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.92\textwidth]{figures/mswc_course_gbdz_local_patch_v1/per_label_f1.png}
-    \caption{Per-label F1 comparison across all methods.}
+    \includegraphics[width=0.92\textwidth]{figures/mswc_course_gbdz_75w_cap40_5_5/per_label_f1.png}
+    \caption{Per-class F1 comparison of all methods.}
     \label{fig:per-label-f1}
 \end{figure}
+
+Overall, the neural models improve the final scores once the dataset becomes larger, but this gain mainly appears in discriminative power rather than in acoustic interpretability.
