@@ -30,39 +30,27 @@
   \AtEndDocument{\end{CJK*}}
 \fi
 
-\title{基于 MSWC English 精确首浊辅音子集的 /g/、/b/、/d/、/z/ 检测：理论、算法与案例分析\\\large VE216 Project Topic 2 重构版}
-\date{2026年4月28日}
+\title{基于 MSWC English 精确首浊辅音子集的 /g/、/b/、/d/、/z/ 检测：课堂模板法、扩展对照与案例分析\\\large VE216 Project Topic 2 重构版}
+\date{2026年4月29日}
 
 \begin{document}
 \maketitle
 
 \begin{abstract}
-本文重构 VE216 Project Topic 2 的主线，不再把重点放在神经网络本身，而是放在任务定义、频谱描述、检测思路和定性案例上。我们把原先较松的词级多标签实验，收紧为一个更接近“首浊辅音检测”的四类任务：只保留首字母为 \texttt{g/b/d/z} 且 CMUdict 中首个非元音音素严格匹配 \texttt{G/B/D/Z} 的单词，共得到 60 个词、3000 条 16 kHz 语音。方法上，本文明确分成两层：第一层是严格课内版本，只使用 lecture slides 范围内的短时截取、DFT/FFT、幅度谱和相关检测，并给出可运行的 MATLAB 代码；第二层是保留现有 \texttt{local\_patch\_v1}、MLP 和 CNN 结果作为课外扩展与 AI 对照。这样，报告的主线重新回到“如何用课堂工具描述 /g/、/b/、/d/、/z/ 的频谱，并据此完成检测”。
+本文把 VE216 Project Topic 2 重构为一个更清晰的首浊辅音检测任务。数据只保留首字母为 \texttt{g/b/d/z} 且首个非元音音素严格匹配 \texttt{G/B/D/Z} 的单词，共得到 60 个词、3000 条语音。方法上，正文先讲严格课内版 \texttt{strict\_course\_fft}：短时分帧、FFT 幅度谱、最大能量块、归一化相关和滑窗最大值；然后再把 \texttt{course\_filterbank\_corr}、\texttt{mlp\_ai} 和 \texttt{cnn\_ai} 放到后文作对照。这样，报告的主线回到“课堂工具如何刻画 /g/、/b/、/d/、/z/ 的局部频谱”，而不是先看分数表。
 \end{abstract}
 
 \section{问题定义与报告主线}
 
-\subsection{任务形式化}
-
-设输入语音为 $x_i$，目标标签为 $y_i \in \{0,1\}^4$，对应标签集合
+设输入语音为 $x_i$，标签为 $y_i \in \{0,1\}^4$，对应集合
 \[
 C=\{g,b,d,z\}.
 \]
-在当前数据集上，每个样本恰好属于四类中的一类，因此满足 $\sum_{c\in C} y_{i,c}=1$。但实现里仍保留一对多接口：先对每个标签输出分数 $s_{i,c}$，再用该标签自己的阈值 $\tau_c$ 做判定
-\[
-\hat y_{i,c} = \mathbb{1}[s_{i,c}\ge \tau_c].
-\]
-这样做的原因是：严格课内模板法、课外扩展版模板法、统计特征分类器和 CNN 输出的都不是天然校准过的概率，统一用 dev 集选阈值更公平，也更容易比较不同方法的特性。
+当前数据集是单标签四分类，每个样本恰好属于四类中的一类。为了便于和不同方法对接，代码仍保留一对多接口：先为每个标签输出分数 $s_{i,c}$，再由阈值或 $\arg\max$ 给出预测。
 
-\subsection{本文的重点}
+这份报告的顺序是固定的。先讲严格课内版，因为它最接近课堂工具，也最适合说明题目本身；再讲课外扩展版，因为它确实更强，但边界已经超出课堂；最后再把 AI 基线单独放到后面，不让它抢走主线。
 
-这份报告只把 AI 模型当作对照基线，不把它们当成主角。主线是：
-\begin{itemize}[nosep]
-    \item 任务边界是否真的收紧到了“首浊辅音检测”；
-    \item 严格课内的 FFT 频谱模板法到底在假设什么、怎么计算、为什么能完成题目要求；
-    \item 课外扩展版为什么会比严格课内版更稳，以及它究竟超出了哪些课堂边界；
-    \item /g/、/b/、/d/、/z/ 为什么会呈现出明显不同的难度。
-\end{itemize}
+需要先说明一点：当前 \path{build/mswc_course_gbdz_local_patch_v1} 目录保留的是整套实验结果，但其中 \texttt{course\_filterbank\_corr} 是课外扩展版，不是严格课内版。正文里如果提到“课堂方法”，指的是 \texttt{strict\_course\_fft}。
 
 \input{sections/literature_review_cn.tex}
 
@@ -70,31 +58,15 @@ C=\{g,b,d,z\}.
 
 \subsection{筛选规则}
 
-新数据集由 \path{src/prepare_mswc_initial_gbdz_subset.py} 生成，核心规则只有一条：
+本文使用的子集由 \path{src/prepare_mswc_initial_gbdz_subset.py} 生成，规则很简单：
 \begin{quote}
 保留一个单词，当且仅当它的首字母属于 \texttt{g/b/d/z}，并且 CMUdict / ARPABET 中首个非元音音素与该字母严格对应为 \texttt{G/B/D/Z}。
 \end{quote}
 
-这条规则的意义是把“字母里出现了某个浊辅音”改成“这个浊辅音确实出现在起始位置”。这样可以自动去掉两类噪声样本：
-\begin{itemize}[nosep]
-    \item 拼写里有目标字母，但发音位置不对；
-    \item 首字母对了，但真正起始音素不是目标浊辅音。
-\end{itemize}
-
-\begin{verbatim}
-for each word w in MSWC:
-    if first letter of w not in {g,b,d,z}: discard
-    phones = CMUdict(w)
-    p = first non-vowel phone in phones
-    if p == first letter(w).upper():
-        keep w
-    else:
-        discard
-\end{verbatim}
+这条规则的作用，是把“拼写里有目标字母”收紧成“这个目标辅音确实出现在起始位置”。这样一来，数据不再混入发音位置不对的样本，也不再把字母出现位置和实际发音边界混在一起。
 
 \subsection{数据规模}
 
-最终实验规模如下：
 \begin{table}[H]
     \centering
     \caption{精确首浊辅音子集的规模统计}
@@ -113,268 +85,268 @@ for each word w in MSWC:
     \end{tabular}
 \end{table}
 
-也就是说，这版数据是四类完全平衡的：总样本数 3000，测试集每类正样本 75 条。这个设定比旧版 600 词、多标签、\texttt{/b/\,/d/\,/l/\,/n/} 的版本更贴近题目，也更适合做案例分析。
+这个子集是完全平衡的，测试集每类 75 条，总计 300 条。相比旧版更松的词级设置，它更接近“首浊辅音检测”这个题目本身。
 
-\section{理论背景与方法}
+\section{理论推导与严格课内方法}
 
-\subsection{严格课内方法：短时幅度谱模板}
+\subsection{从波形到短时 FFT 模板}
 
-如果严格限制在 lecture slides 的范围内，那么最自然的做法不是 log-mel、MFCC 或神经网络，而是直接使用 chap4 和 chap7 里的 Fourier transform / DFT / FFT 工具来描述局部频谱。语音虽然不是周期信号，但只要在整词上取一个短窗口，就可以把这段局部波形近似看成短时片段，并用 FFT 观察它的频率成分。
-
-设第 $i$ 个样本的波形为 $x_i[n]$。取帧长 $L=20$ ms、帧移 $H=10$ ms、FFT 点数 $N=512$。第 $m$ 帧的离散频谱定义为
+严格课内版只用四步：短时分帧、FFT、局部块平均、归一化相关。设第 $i$ 个样本的波形为 $x_i[n]$，帧长 $L=20$ ms，帧移 $H=10$ ms，FFT 点数 $N=512$。第 $m$ 帧的频谱可写成
 \[
-X_{i,m}[k] = \sum_{n=0}^{L-1} x_i[n+mH] e^{-j 2\pi kn/N}, \qquad k=0,\dots,N-1.
+X_{i,m}[k] = \sum_{n=0}^{L-1} x_i[n+mH] e^{-j2\pi kn/N},\qquad k=0,\dots,N-1.
 \]
-由于示例音频前部常带静音，课堂版检测器不只看词首一个窗口，而是在整词上滑动一个短时块。设每个块包含连续 $M$ 帧，则对应的局部幅度谱描述为
+
+因为词首辅音往往只占很短的一段时间，所以不能直接看整词平均谱，而要在整词上滑动一个短时块。设每个块包含连续 $M=4$ 帧，则块描述子定义为
 \[
 P_i^{(r)}[k]
 =
 \frac{1}{M}\sum_{m=0}^{M-1}
-\frac{|X_{i,r+m}[k]|}{\max_{\kappa}|X_{i,r+m}[\kappa]|},
+\frac{|X_{i,r+m}[k]|}{\max_{\kappa}|X_{i,r+m}[\kappa]|}.
 \]
-其中 $r$ 是块的起始帧。归一化的目的只是减弱录音音量差异，让判别主要依赖谱形而不是整体幅度。
+这里先按帧归一化，再在块内平均，是为了减小录音音量差异，把重点放在谱形而不是绝对能量上。
 
-对每个标签 $c\in\{g,b,d,z\}$，把训练集或参考样本中最有能量的短时块幅度谱取平均，得到该辅音的模板
+模板的构造也很直接：对每个标签，先在代表词上找能量最大的 4 帧块，再把这个块的归一化幅度谱当作该标签模板。模板最终再做一次 $L_2$ 归一化，得到
 \[
-T_c[k] = \frac{1}{N_c}\sum_{i:y_i=c} P_i^{(\star)}[k].
+T_c[k] = \frac{1}{\|P_c\|_2} P_c[k].
 \]
-检测时，利用 chap4 中的互相关思想，把测试样本的局部谱和模板做归一化相关：
+这样得到的模板不是“学出来”的参数，而是课堂上能直接解释的局部频谱原型。
+
+\subsection{模板长什么样}
+
+图~\ref{fig:strict-template} 展示了四个代表词的模板构造过程。左边是每个词中能量最大的 4 帧块的短时 FFT 幅度谱，右边是对应的归一化模板曲线。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\textwidth]{figures/mswc_course_gbdz_local_patch_v1/strict_course_template_construction.png}
+    \caption{严格课内版的模板构造：先取最大能量块，再平均块内 FFT 幅度谱。}
+    \label{fig:strict-template}
+\end{figure}
+
+这张图比较重要，因为它把“模板”变成了可见的对象。/z/ 的高频摩擦能量更连续，/b/、/d/、/g/ 的起始爆破更短，模板差异主要就落在这些局部区间里。
+
+\subsection{互相关如何扫过整词}
+
+检测时，对测试样本的所有候选块做同样的描述，再和模板做归一化内积：
 \[
 \rho_{i,c}^{(r)}
 =
-\frac{\sum_k P_i^{(r)}[k]\,T_c[k]}
-{\sqrt{\sum_k |P_i^{(r)}[k]|^2}\sqrt{\sum_k |T_c[k]|^2}}.
+\frac{\langle P_i^{(r)},T_c\rangle}
+{\|P_i^{(r)}\|_2\|T_c\|_2}.
 \]
-再在所有滑动窗口上取最大值
+最终分数取整词范围内的最大值
 \[
-s_{i,c} = \max_r \rho_{i,c}^{(r)}.
+s_{i,c}=\max_r \rho_{i,c}^{(r)}.
 \]
-如果是单标签四分类任务，就取 $\hat c_i=\arg\max_c s_{i,c}$；如果保留一对多接口，则仍可在 dev 集上为每个标签选阈值 $\tau_c$。
+如果是单标签四分类，就直接取 $\arg\max_c s_{i,c}$。如果保留一对多接口，也可以再回到 dev 集上选阈值。本文主线用的是单标签四分类，所以正文里更关心最大分数对应哪一类，而不是每类是否过阈值。
 
-这个版本只依赖以下课堂工具：
-\begin{itemize}[nosep]
-    \item 非周期信号的 Fourier transform 观点与局部频谱描述；
-    \item DFT / FFT 的 MATLAB 实现；
-    \item 时间平移下的滑窗搜索；
-    \item 互相关 / 归一化相关作为模板匹配分数。
-\end{itemize}
-因此，严格课内版不再引入 log-mel、MFCC、负模板差分或额外学习到的特征组合。
-
-\subsection{算法 1：课堂版 MATLAB 频谱模板检测}
-
-\begin{verbatim}
-Algorithm 1 短时幅度谱模板检测
-Input: template waveforms, query waveform
-Output: detected label
-
-for each label c do
-    scan the whole waveform with 20 ms frames and 10 ms hop
-    pick the 4-frame block with the largest energy
-    average the FFT magnitudes in this block to build template T_c
-end for
-
-for each query waveform do
-    scan all candidate 4-frame blocks
-    for each label c do
-        compute normalized correlation between the block spectrum and T_c
-        keep the maximum score s_ic over all blocks
-    end for
-    predict argmax_c s_ic
-end for
-\end{verbatim}
-
-对应的 MATLAB 实现放在 \path{src/matlab_course_template_detector.m} 和 \path{src/matlab_course_spectrum_demo.m} 中。核心三步就是：\texttt{audioread} 读入语音，\texttt{fft} 求局部幅度谱，最后用归一化内积实现相关打分。
-
-\begin{verbatim}
-X = fft(frame, 512);
-mag = abs(X(1:257));
-score = (mag' * template) / (norm(mag) * norm(template));
-\end{verbatim}
-
-\subsection{课外扩展：局部窗对比模板}
-
-当前项目里保留的 \texttt{local\_patch\_v1} 不是严格课内版本，而是一个为了提高分数而做的工程扩展：它会先定位 onset 邻域，再在局部窗上做更复杂的谱图搜索，并引入额外的统计描述和调参。因此，后文凡是提到 \texttt{local\_patch\_v1} 或其结果，都应理解为“课外扩展版模板法”，而不是上一节那个严格按课堂工具实现的 MATLAB 版本。
-
-\subsection{课外对照 1：统计特征 MLP 基线}
-
-MLP 不是主角，只是一个强一点的统计基线。它的输入不是原始波形，而是手工汇总后的 62 维统计特征：
-\begin{itemize}[nosep]
-    \item 13 维 MFCC 的均值和标准差；
-    \item MFCC 一阶差分的均值和标准差；
-    \item 10 个 coarse band-energy 特征。
-\end{itemize}
-
-模型结构是 \texttt{StandardScaler -> MLPClassifier(128, 64)}，用 early stopping 训练。和模板法相比，它不再依赖显式模板对齐，而是直接学习这些统计特征之间的组合关系。因为当前数据是单标签四分类，但阈值仍按 label 单独选，所以 MLP 的 exact-match 往往会比 label-wise accuracy 更能反映它是否“少乱报”。
-
-\subsection{课外对照 2：CNN / AI 基线}
-
-CNN 只作为更强的对照上界。输入是整词 log-mel spectrogram，网络是 3 个卷积块加自适应池化，再接一层小型全连接头。训练时使用带 \texttt{pos\_weight} 的 \texttt{BCEWithLogitsLoss}，并按 dev macro-F1 早停回退到最佳 epoch。
-
-最终采用的调参配置是：
-\[
-\texttt{epochs}=10,\quad
-\texttt{batch}=192,\quad
-\texttt{lr}=10^{-3},\quad
-\texttt{weight\_decay}=10^{-4},\quad
-\texttt{patience}=5.
-\]
-它的作用只是提供一个“模型能学到多少局部时频模式”的参照，不影响本文的主要论证。
-
-\section{定性案例分析}
-
-\subsection{课堂版 MATLAB 频谱示例}
-
-图~\ref{fig:course-spectra} 给出了四个代表词在“最大能量短时块”上的归一化 FFT 幅度谱。这正是上一节严格课内 MATLAB 方法实际使用的模板。可以把它理解为：先在整词上找到最像辅音爆破或摩擦的那一小段，再用该小段的局部频谱作为该字母的代表。
+图~\ref{fig:strict-corr} 给出了这一过程的可视化：上图是波形，中间是最匹配的 4 帧块，下图是四个模板在所有候选起点上的相关分数。它对应的就是“先找局部证据，再看这段证据像哪一个模板”。
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.92\textwidth]{figures/course_matlab/example_short_time_spectra.png}
-    \caption{四个代表词的短时 FFT 幅度谱模板（课堂版 MATLAB 方法）。}
-    \label{fig:course-spectra}
+    \includegraphics[width=0.95\textwidth]{figures/mswc_course_gbdz_local_patch_v1/strict_course_correlation_demo.png}
+    \caption{严格课内版的互相关搜索：先扫候选块，再取每个标签的最大相关分数。}
+    \label{fig:strict-corr}
 \end{figure}
 
-从图上可以看出几个和课堂频谱分析一致的现象：
-\begin{itemize}[nosep]
-    \item /z/ 在较高频段仍保留较强能量，因此最像“持续摩擦型”；
-    \item /b/、/d/、/g/ 都更像短促的 stop onset，但峰值分布并不相同；
-    \item /g/ 和 /z/ 的谱形相似度不低，因此它在简单模板检测里最容易混淆。
-\end{itemize}
+\subsection{MATLAB 对应实现}
 
-\subsection{课堂版检测得分}
+这套严格课内方法在 MATLAB 里对应 \path{src/matlab_course_template_detector.m} 和 \path{src/matlab_course_spectrum_demo.m}。核心打分式子就是一行：
+\[
+\texttt{score}=\frac{\texttt{mag}^\top \texttt{template}}{\|\texttt{mag}\|_2\|\texttt{template}\|_2}.
+\]
+\path{src/matlab_case_demo.m} 则负责把四个案例音频逐条画出来，方便直接看波形和标签分数。
 
-图~\ref{fig:course-score} 是同一套 MATLAB 频谱模板在四个示例词上的相关得分矩阵。横轴是模板标签，纵轴是查询单词，每一行取最大相关分数对应的标签作为预测。
+\section{案例分析与可视化}
+
+\subsection{四个代表词的频谱模板}
+
+图~\ref{fig:matlab-spectra} 给出了四个代表词在 MATLAB demo 里的短时 FFT 模板。它不是训练图，而是用来确认模板形状到底长什么样。
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.68\textwidth]{figures/course_matlab/example_score_matrix.png}
-    \caption{课堂版 MATLAB 频谱模板检测的相关得分矩阵。}
-    \label{fig:course-score}
+    \includegraphics[width=0.95\textwidth]{figures/course_matlab/example_short_time_spectra.png}
+    \caption{四个代表词的短时 FFT 幅度谱模板。}
+    \label{fig:matlab-spectra}
 \end{figure}
 
-这张图说明严格课内版已经能够完成题目要求的基本形式：用 /b/ 的频谱模板去扫整词，\texttt{boy} 在 /b/ 模板上的得分最高；同理，\texttt{get}、\texttt{did}、\texttt{zero} 也都在各自模板上达到最大值。它不是最强的工程方案，但从“频谱描述 $\rightarrow$ 相关检测 $\rightarrow$ 字母判定”的逻辑上是完整闭环的。
+从图上能直接看出，/z/ 的高频摩擦更连续，/b/ 和 /d/ 的起始爆破更短，/g/ 的短时结构最容易被时间对齐误差冲掉。这个结论和模板构造图是一致的。
 
-\subsection{扩展版时频图（供对照）}
+\subsection{相关得分矩阵}
 
-图~\ref{fig:examples} 给出了四个代表词的波形和 spectrogram，图~\ref{fig:template} 给出了课外扩展实现 \texttt{local\_patch\_v1} 中使用的平均 log-mel 模板。它们保留在报告里，主要是为了和严格课内版做对照。
+图~\ref{fig:matlab-score} 是同一组模板在四个案例词上的相关得分矩阵。它的作用不是证明模型多强，而是说明“模板和查询之间的相关”这件事本身确实在运行。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.70\textwidth]{figures/course_matlab/example_score_matrix.png}
+    \caption{四个代表词对应的相关得分矩阵。}
+    \label{fig:matlab-score}
+\end{figure}
+
+这个矩阵比单纯看波形更直接，因为它把“哪个模板更像这段语音”变成了数值。如果相关分数差距不大，就说明这个词首辅音对齐还不够稳，这也是后面扩展版要解决的点。
+
+\section{实验结果与比较}
+
+\subsection{严格课内主线}
+
+严格课内版的结果先单独看。因为这是单标签四分类，exact-match 是更直接的指标，label-wise accuracy 只作为辅助参考。
+
+\begin{table}[H]
+    \centering
+    \caption{严格课内 FFT 模板法的主指标}
+    \label{tab:strict-main}
+    \begin{tabular}{lccccc}
+        \toprule
+        方法 & label-wise acc. & exact-match acc. & macro-F1 & micro-F1 & samples-F1 \\
+        \midrule
+        strict\_course\_fft & 0.6333 & 0.2667 & 0.2598 & 0.2667 & 0.2667 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\begin{table}[H]
+    \centering
+    \caption{严格课内 FFT 模板法的分标签 F1}
+    \label{tab:strict-per-label}
+    \begin{tabular}{lcccc}
+        \toprule
+        方法 & /g/ & /b/ & /d/ & /z/ \\
+        \midrule
+        strict\_course\_fft & 0.205 & 0.343 & 0.217 & 0.275 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+图~\ref{fig:strict-score-dist} 进一步把四个标签的分数分布画出来。正样本和负样本有一定分离，但重叠仍然明显，所以严格课内版能说明任务，却还不够稳。
+
+\begin{figure}[H]
+    \centering
+    \begin{minipage}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/mswc_course_gbdz_local_patch_v1/strict_course/score_distribution_g.png}
+        \small /g/
+    \end{minipage}\hfill
+    \begin{minipage}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/mswc_course_gbdz_local_patch_v1/strict_course/score_distribution_b.png}
+        \small /b/
+    \end{minipage}
+
+    \vspace{0.5em}
+    \begin{minipage}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/mswc_course_gbdz_local_patch_v1/strict_course/score_distribution_d.png}
+        \small /d/
+    \end{minipage}\hfill
+    \begin{minipage}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/mswc_course_gbdz_local_patch_v1/strict_course/score_distribution_z.png}
+        \small /z/
+    \end{minipage}
+    \caption{严格课内版四个标签的得分分布。}
+    \label{fig:strict-score-dist}
+\end{figure}
+
+\subsection{课外扩展版对照}
+
+严格课内版之外，代码里还保留了 \texttt{course\_filterbank\_corr}。它先做局部窗定位，再在局部频谱上比较正负模板，并把自相关线索也纳入分数。这个版本已经超出了课堂工具本身，所以这里只把它当扩展对照。
+
+\begin{table}[H]
+    \centering
+    \small
+    \setlength{\tabcolsep}{4pt}
+    \caption{严格课内版与课外扩展版的整体比较}
+    \label{tab:course-compare}
+    \begin{tabular}{lccccc}
+        \toprule
+        方法 & label-wise acc. & exact-match acc. & macro-F1 & micro-F1 & samples-F1 \\
+        \midrule
+        strict\_course\_fft & 0.6333 & 0.2667 & 0.2598 & 0.2667 & 0.2667 \\
+        course\_filterbank\_corr & 0.7750 & 0.5500 & 0.5462 & 0.5500 & 0.5500 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+扩展版的提升很明显，主要来自两点：一是它把搜索范围更精确地收到了词首附近，二是它把局部窗里的正负模板差分显式算进去了。图~\ref{fig:ext-template-grid} 和图~\ref{fig:ext-examples} 仍然保留在报告里，目的就是把这条扩展链路看清楚。
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.95\textwidth]{figures/mswc_course_gbdz_local_patch_v1/letter_examples.png}
-    \caption{四个目标浊辅音的代表性样本：\texttt{get}、\texttt{boy}、\texttt{did}、\texttt{zero}。}
-    \label{fig:examples}
+    \caption{扩展版对应的四个代表样本。}
+    \label{fig:ext-examples}
 \end{figure}
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.90\textwidth]{figures/mswc_course_gbdz_local_patch_v1/template_grid.png}
-    \caption{课外扩展版 \texttt{local\_patch\_v1} 的平均 log-mel 模板。}
-    \label{fig:template}
+    \caption{扩展版的平均 log-mel 模板。}
+    \label{fig:ext-template-grid}
 \end{figure}
 
-从图上能直接看出：/g/、/b/、/d/ 的关键差异主要集中在起始几十毫秒的短时爆破和过渡；/z/ 则有更长、更明显的高频摩擦能量。也因此，/z/ 的模板最稳定，/g/ 的模板最难。
+\section{AI 对照与训练曲线}
 
-\subsection{扩展版四个样本的预测行为}
-
-\begin{table}[H]
-    \centering
-    \small
-    \caption{四个代表词的预测行为与声学解释}
-    \label{tab:cases}
-    \begin{tabularx}{\textwidth}{l l l l l X}
-        \toprule
-        词 & 真值 & 扩展模板法 & MLP & CNN & 解释 \\
-        \midrule
-        get & g & g & g & b & /g/ 的 burst 很短，局部窗抓住 onset 后 course 和 MLP 都能判对；CNN 仍容易和 /b/ 混淆。 \\
-        boy & b & b & b & b & /b/ 的过渡最稳定，三种方法都比较容易。 \\
-        did & d & z & d & b & /d/ 的 burst 更容易受对齐误差影响；course 方法在这个样本上仍会偏到 /z/，但 MLP 还能保住 stop 线索。 \\
-        zero & z & z & z & d & /z/ 的摩擦噪声最长，course 和 MLP 都较稳；CNN 仍偶尔把它往 /d/ 拉。 \\
-        \bottomrule
-    \end{tabularx}
-\end{table}
-
-\begin{itemize}[nosep]
-    \item 扩展模板法经过局部窗和对比模板改造后，不再是整词均值判别；它的强项变成了 /b/、/d/、/z/ 这类 onset 线索清楚的样本。
-    \item /g/ 仍最难，因为 burst 太短，稍微的对齐误差就会吞掉证据；这也是 MLP 在 /g/ 上略占优的原因。
-    \item CNN 仍然最弱，说明在这个数据规模上，直接端到端看整词谱图并不能稳定学到首辅音证据。
-\end{itemize}
-
-\section{实验结果与比较}
-
-\subsection{总体结果}
-
-这一节的所有数值表格都来自课外扩展实现 \texttt{local\_patch\_v1}，不是上一节那个严格课内 MATLAB 检测器。之所以仍然保留这些结果，是为了说明：一旦从“纯 FFT 模板”进一步加入更复杂的局部窗和统计技巧，性能会如何变化。表~\ref{tab:summary} 显示，扩展模板法已经成为三种方法里最强的一个：它的 label-wise accuracy、exact-match 和 macro-F1 都最高，说明把判别证据限制在 onset 附近是有效的。MLP 仍然是稳定的统计基线，但整体略弱于扩展模板法；CNN 在这一版设置下明显落后，说明仅靠整词级 log-mel 对短 burst 并不稳定。
+AI 基线放到这里，是因为它们只负责对照，不负责定义主线。代码里保留的是一个统计特征 MLP 和一个小型 CNN：前者吃 MFCC 和 band-energy 统计量，后者直接吃整词 log-mel spectrogram。
 
 \begin{table}[H]
     \centering
-    \caption{总体指标比较。}
-    \label{tab:summary}
+    \caption{AI 基线的整体指标}
+    \label{tab:ai-summary}
     \begin{tabular}{lccccc}
         \toprule
         方法 & label-wise acc. & exact-match acc. & macro-F1 & micro-F1 & samples-F1 \\
         \midrule
-        扩展模板法 & \textbf{0.7750} & \textbf{0.5500} & \textbf{0.5462} & \textbf{0.5500} & \textbf{0.5500} \\
         MLP & 0.7633 & 0.5267 & 0.5258 & 0.5267 & 0.5267 \\
         CNN & 0.6600 & 0.3200 & 0.2219 & 0.3200 & 0.3200 \\
         \bottomrule
     \end{tabular}
 \end{table}
 
+从这个任务上看，MLP 是一个稳定的统计基线，但仍然没有超过扩展模板法；CNN 的训练过程能跑起来，测试指标却明显落后，说明在这个数据规模上，直接端到端吃整词谱图并没有自动把词首证据提出来。
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth]{figures/mswc_course_gbdz_local_patch_v1/cnn_history.png}
+    \caption{CNN 的训练曲线。}
+    \label{fig:cnn-history}
+\end{figure}
+
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.92\textwidth]{figures/mswc_course_gbdz_local_patch_v1/metric_summary.png}
-    \caption{三种方法的总体指标。}
+    \caption{全部方法的总体指标汇总。}
     \label{fig:metric-summary}
 \end{figure}
 
-这里最重要的变化是：局部窗改造后，扩展模板法的 exact-match 反而超过了 MLP；/b/、/d/、/z/ 的提升最明显，/g/ 仍然最难。CNN 的 macro-F1 最低，说明端到端看整词谱图并没有把词首证据稳定提出来。
-
-\subsection{分标签结果}
-
-\begin{table}[H]
-    \centering
-    \caption{四个标签的 F1}
-    \label{tab:per-label}
-    \begin{tabular}{lcccc}
-        \toprule
-        方法 & /g/ & /b/ & /d/ & /z/ \\
-        \midrule
-        扩展模板法 & 0.438 & \textbf{0.528} & \textbf{0.472} & \textbf{0.747} \\
-        MLP & \textbf{0.493} & 0.431 & 0.469 & 0.711 \\
-        CNN & 0.049 & 0.444 & 0.024 & 0.371 \\
-        \bottomrule
-    \end{tabular}
-\end{table}
-
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.90\textwidth]{figures/mswc_course_gbdz_local_patch_v1/per_label_f1.png}
-    \caption{四个标签上的 F1 对比。}
+    \includegraphics[width=0.92\textwidth]{figures/mswc_course_gbdz_local_patch_v1/per_label_f1.png}
+    \caption{全部方法在四个标签上的 F1 对比。}
     \label{fig:per-label-f1}
 \end{figure}
 
-从分标签看，/g/ 仍然是最难的；MLP 在 /g/ 上略占优，说明它学到了更多全局统计；扩展模板法在 /b/、/d/、/z/ 上更稳，尤其是 /z/ 的持续摩擦噪声最容易被局部窗捕捉。CNN 在 /g/ 和 /d/ 上仍然偏弱，这和它更依赖大样本里稳定的局部纹理有关。
+这几张图放在后面，是为了把 AI 基线的角色说清楚：它们可以比较，但不该先占位置。对本文来说，真正的收获不是“CNN 有没有赢”，而是主线已经从一开始就定义成了可解释的课堂方法。
 
 \section{讨论与局限}
 
-这次重构最重要的收益，不是某个分数上升了，而是任务边界终于变清楚了。旧版更像“词里有没有出现某个浊辅音”，新版则更接近“一个整词里能不能检出目标浊辅音”，而严格课内版与课外扩展版也终于被分开陈述：前者负责完成题目要求，后者负责展示继续工程化以后能提升到什么程度。
+这次重构之后，任务边界终于比较清楚了。严格课内版负责说明“课堂工具能不能把首辅音讲明白”，扩展版负责说明“把局部定位和统计技巧加进去以后能提升多少”，AI 基线则负责提供一个更常见的工程对照。
 
-这套方案仍然有三个局限：
+但这套方案还有几个明显限制：
 \begin{itemize}[nosep]
-    \item 语音本身仍是整词级音频，不是人工切好的 phone segment；严格课内版只能依赖滑窗搜索，扩展版则仍需要 onset 近似对齐。
-    \item /z/ 的词数仍然是数据集构造的瓶颈，想继续扩规模就得放宽单词池或换更大的语料。
-    \item /g/ 和 /d/ 的 burst 很短，简单 FFT 模板容易和邻近类别混淆；扩展版虽然更强，但也仍会受对齐误差影响。
+    \item 语音输入仍然是整词级音频，不是人工切好的 phone segment，所以严格课内版只能靠滑窗搜索。
+    \item /g/ 和 /d/ 的 burst 很短，对齐误差一大，模板证据就容易被吞掉。
+    \item /z/ 之所以最好认，是因为它的摩擦能量更长、更连续，模板法在这类样本上天然更占便宜。
 \end{itemize}
+
+所以这份报告的重点不是把某个方法堆到最高分，而是先把任务、方法和结果的层次关系摆正。这样后面的比较才有意义。
 
 \section{结论}
 
-本文完成了 Topic 2 的一次重新组织，核心结论如下：
+本文完成了 Topic 2 的重构，核心结论如下：
 \begin{itemize}[nosep]
-    \item 通过“首字母与首个非元音音素严格对应”的规则，新数据集把任务收紧到了首浊辅音检测；
-    \item 严格课内版可以只用短时 FFT 幅度谱和相关检测，在 MATLAB 中完成四类浊辅音的频谱描述与示例检测；
-    \item 课外扩展版 \texttt{local\_patch\_v1} 在当前四类任务上取得最佳整体结果，macro-F1 为 0.546，exact-match 为 0.550；
-    \item MLP 的 macro-F1 为 0.526，CNN 为 0.222，说明更强的深度模型并没有自动取代一个做对了局部频谱建模的模板法；
-    \item /z/ 最容易、/g/ 最难，这和声学图里的持续摩擦与短促爆破完全一致；
-    \item 这份报告的重点已经从“跑一个神经网络”转成“解释为什么这些辅音会这样表现”。
+    \item 新数据集把任务收紧到了首浊辅音检测，标签边界比旧版清楚得多；
+    \item 严格课内版可以只用短时 FFT 幅度谱和归一化相关完成完整的检测链路；
+    \item 课外扩展版 \texttt{course\_filterbank\_corr} 在当前四类任务上取得最佳整体结果，exact-match 为 0.550；
+    \item MLP 的 exact-match 为 0.527，CNN 为 0.320，说明更强的模型并不会自动替代做对了局部频谱建模的模板法；
+    \item /z/ 最容易、/g/ 最难，这和声学图里的持续摩擦与短促爆破一致。
 \end{itemize}
 
 \begin{thebibliography}{99}
@@ -392,9 +364,6 @@ G. Chen, C. Parada, and G. Heigold, ``Small-Footprint Keyword Spotting using Dee
 
 \bibitem{sainath2015}
 T. N. Sainath and C. Parada, ``Convolutional Neural Networks for Small-Footprint Keyword Spotting,'' in \textit{Proc. Interspeech 2015}. \url{https://research.google/pubs/convolutional-neural-networks-for-small-footprint-keyword-spotting/}.
-
-\bibitem{arik2017}
-S. O. Arik \textit{et al.}, ``Convolutional Recurrent Neural Networks for Small-Footprint Keyword Spotting,'' in \textit{Proc. Interspeech 2017}.
 
 \bibitem{warden2018}
 P. Warden, ``Speech Commands: A Dataset for Limited-Vocabulary Speech Recognition,'' arXiv:1804.03209, 2018. \url{https://doi.org/10.48550/arXiv.1804.03209}.

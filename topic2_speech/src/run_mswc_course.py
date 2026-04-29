@@ -53,6 +53,16 @@ COURSE_ONSET_MARGIN = 0.22
 COURSE_CANDIDATE_SHIFTS = (-2, 0, 2)
 COURSE_CROSS_WEIGHT = 0.65
 COURSE_AUTOCORR_WEIGHT = 0.35
+STRICT_FRAME_MS = 20
+STRICT_HOP_MS = 10
+STRICT_BLOCK_FRAMES = 4
+STRICT_NFFT = 512
+STRICT_TEMPLATE_CASES = {
+    "g": "case_g_get.wav",
+    "b": "case_b_boy.wav",
+    "d": "case_d_did.wav",
+    "z": "case_z_zero.wav",
+}
 
 
 @dataclass
@@ -320,6 +330,116 @@ def compute_representations(x: np.ndarray, sr: int):
         "course_autocorr": filterbank_autocorr,
         "freqs": freqs.astype(np.float32),
     }
+
+
+def strict_periodic_hamming(n: int) -> np.ndarray:
+    if n <= 1:
+        return np.ones(max(1, n), dtype=np.float32)
+    k = np.arange(n, dtype=np.float32)
+    return (0.54 - 0.46 * np.cos(2 * np.pi * k / n)).astype(np.float32)
+
+
+def strict_frame_signal(x: np.ndarray, sr: int) -> np.ndarray:
+    frame_len = max(1, round(sr * STRICT_FRAME_MS / 1000))
+    hop = max(1, round(sr * STRICT_HOP_MS / 1000))
+    x = np.asarray(x, dtype=np.float32)
+    if len(x) < frame_len:
+        x = np.pad(x, (0, frame_len - len(x)))
+    n_frames = max(1, math.floor((len(x) - frame_len) / hop) + 1)
+    frames = np.zeros((n_frames, frame_len), dtype=np.float32)
+    win = strict_periodic_hamming(frame_len)
+    for i in range(n_frames):
+        start = i * hop
+        frames[i] = x[start : start + frame_len] * win
+    return frames
+
+
+def strict_block_descriptor(frames: np.ndarray, start_frame: int) -> np.ndarray:
+    block = pad_or_trim_rows(frames, start_frame, STRICT_BLOCK_FRAMES)
+    spec = np.abs(np.fft.fft(block, STRICT_NFFT, axis=1))[:, : STRICT_NFFT // 2 + 1]
+    row_max = np.max(spec, axis=1, keepdims=True)
+    row_max[row_max == 0] = 1
+    spec = spec / row_max
+    descriptor = spec.mean(axis=0)
+    descriptor = descriptor / max(float(np.linalg.norm(descriptor)), 1e-12)
+    return descriptor.astype(np.float32)
+
+
+def strict_select_max_energy_descriptor(x: np.ndarray, sr: int):
+    frames = strict_frame_signal(x, sr)
+    n_frames = frames.shape[0]
+    n_starts = max(1, n_frames - STRICT_BLOCK_FRAMES + 1)
+    best_energy = -np.inf
+    best_start = 0
+    best_descriptor = np.zeros(STRICT_NFFT // 2 + 1, dtype=np.float32)
+    for start in range(n_starts):
+        block = pad_or_trim_rows(frames, start, STRICT_BLOCK_FRAMES)
+        block_energy = float(np.sum(block**2))
+        if block_energy > best_energy:
+            best_energy = block_energy
+            best_start = start
+            best_descriptor = strict_block_descriptor(frames, start)
+    return best_descriptor, best_start
+
+
+def strict_all_candidate_descriptors(x: np.ndarray, sr: int):
+    frames = strict_frame_signal(x, sr)
+    n_frames = frames.shape[0]
+    n_starts = max(1, n_frames - STRICT_BLOCK_FRAMES + 1)
+    matrix = np.zeros((n_starts, STRICT_NFFT // 2 + 1), dtype=np.float32)
+    start_frames = np.arange(n_starts, dtype=np.int32)
+    for start in range(n_starts):
+        matrix[start] = strict_block_descriptor(frames, start)
+    return matrix, start_frames
+
+
+def build_strict_course_bank(case_dir: Path, labels: Sequence[str]):
+    manifest_path = case_dir / "case_manifest.csv"
+    manifest = pd.read_csv(manifest_path)
+    label_map = {str(row["label"]).strip(): row for _, row in manifest.iterrows()}
+
+    template_paths: List[str] = []
+    template_words: List[str] = []
+    template_starts: List[int] = []
+    templates: List[np.ndarray] = []
+
+    for lab in labels:
+        row = label_map[lab]
+        wav_path = case_dir / str(row["filename"])
+        sr, x = load_wav(wav_path)
+        template, start_frame = strict_select_max_energy_descriptor(x, sr)
+        template_paths.append(str(wav_path))
+        template_words.append(str(row["word"]))
+        template_starts.append(int(start_frame))
+        templates.append(template)
+
+    templates_arr = np.vstack(templates).astype(np.float32)
+    return {
+        "labels": list(labels),
+        "template_paths": template_paths,
+        "template_words": template_words,
+        "template_start_frames": np.asarray(template_starts, dtype=np.int32),
+        "templates": templates_arr,
+        "freq_hz": np.arange(STRICT_NFFT // 2 + 1, dtype=np.float32)
+        * (16000.0 / STRICT_NFFT),
+        "cfg": {
+            "target_sr": 16000,
+            "frame_ms": STRICT_FRAME_MS,
+            "hop_ms": STRICT_HOP_MS,
+            "block_frames": STRICT_BLOCK_FRAMES,
+            "nfft": STRICT_NFFT,
+        },
+    }
+
+
+def score_strict_course_detector(paths: Sequence[str | Path], bank: Dict[str, np.ndarray]) -> np.ndarray:
+    scores = np.zeros((len(paths), len(bank["labels"])), dtype=np.float32)
+    templates = np.asarray(bank["templates"], dtype=np.float32)
+    for i, wav_path in enumerate(paths):
+        sr, x = load_wav(Path(wav_path))
+        matrix, _ = strict_all_candidate_descriptors(x, sr)
+        scores[i] = np.max(matrix @ templates.T, axis=0)
+    return scores
 
 
 def build_dataset(items: Sequence[Item], labels: Sequence[str], cache_path: Path):
@@ -633,6 +753,104 @@ def plot_score_distribution(scores: np.ndarray, y_true: np.ndarray, labels: Sequ
         plt.close()
 
 
+def plot_strict_template_construction(bank: Dict[str, np.ndarray], out_path: Path):
+    fig, axes = plt.subplots(len(bank["labels"]), 2, figsize=(10.5, 8.5), constrained_layout=True)
+    freq_khz = np.asarray(bank["freq_hz"], dtype=np.float32) / 1000.0
+    for i, lab in enumerate(bank["labels"]):
+        wav_path = Path(bank["template_paths"][i])
+        _, x = load_wav(wav_path)
+        frames = strict_frame_signal(x, 16000)
+        block = pad_or_trim_rows(frames, int(bank["template_start_frames"][i]), STRICT_BLOCK_FRAMES)
+        spec = np.abs(np.fft.fft(block, STRICT_NFFT, axis=1))[:, : STRICT_NFFT // 2 + 1]
+        spec = spec / np.maximum(spec.max(axis=1, keepdims=True), 1e-12)
+        mean_spec = np.asarray(bank["templates"][i], dtype=np.float32)
+
+        ax0 = axes[i, 0]
+        im = ax0.imshow(
+            spec,
+            aspect="auto",
+            origin="lower",
+            extent=[freq_khz[0], freq_khz[-1], 1, STRICT_BLOCK_FRAMES],
+            cmap="magma",
+        )
+        ax0.set_title(f"/{lab}/ template block: {bank['template_words'][i]}")
+        ax0.set_xlabel("Frequency (kHz)")
+        ax0.set_ylabel("Frame in block")
+        fig.colorbar(im, ax=ax0, fraction=0.046, pad=0.04)
+
+        ax1 = axes[i, 1]
+        ax1.plot(freq_khz, mean_spec, color="#1f77b4", linewidth=2.0)
+        ax1.fill_between(freq_khz, 0, mean_spec, color="#9ecae1", alpha=0.5)
+        ax1.set_xlim(freq_khz[0], freq_khz[-1])
+        ax1.set_ylim(0, max(1.02, float(mean_spec.max()) * 1.05))
+        ax1.set_title(f"/{lab}/ normalized FFT template")
+        ax1.set_xlabel("Frequency (kHz)")
+        ax1.set_ylabel("Magnitude")
+        ax1.grid(alpha=0.25)
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=220)
+    plt.close(fig)
+
+
+def plot_strict_correlation_demo(example_path: Path, bank: Dict[str, np.ndarray], label: str, out_path: Path):
+    sr, x = load_wav(example_path)
+    frames = strict_frame_signal(x, sr)
+    descriptors, start_frames = strict_all_candidate_descriptors(x, sr)
+    score_traces = descriptors @ np.asarray(bank["templates"], dtype=np.float32).T
+    label_idx = list(bank["labels"]).index(label)
+    best_idx = int(np.argmax(score_traces[:, label_idx]))
+    best_start = int(start_frames[best_idx])
+    frame_len = max(1, round(sr * STRICT_FRAME_MS / 1000))
+    hop = max(1, round(sr * STRICT_HOP_MS / 1000))
+    start_sample = best_start * hop
+    end_sample = min(len(x), start_sample + frame_len + hop * (STRICT_BLOCK_FRAMES - 1))
+    time_axis = np.arange(len(x), dtype=np.float32) / float(sr)
+    start_times = start_frames.astype(np.float32) * (STRICT_HOP_MS / 1000.0)
+
+    fig, axes = plt.subplots(3, 1, figsize=(9.6, 8.2), constrained_layout=True)
+
+    ax = axes[0]
+    ax.plot(time_axis, x, color="black", linewidth=1.0)
+    ax.axvspan(start_sample / sr, end_sample / sr, color="#fdae6b", alpha=0.35)
+    ax.set_title(f"Strict course search on {example_path.stem} for /{label}/")
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Amplitude")
+    ax.grid(alpha=0.25)
+
+    ax = axes[1]
+    block = pad_or_trim_rows(frames, best_start, STRICT_BLOCK_FRAMES)
+    block_spec = np.abs(np.fft.fft(block, STRICT_NFFT, axis=1))[:, : STRICT_NFFT // 2 + 1]
+    block_spec = block_spec / np.maximum(block_spec.max(axis=1, keepdims=True), 1e-12)
+    im = ax.imshow(
+        block_spec,
+        aspect="auto",
+        origin="lower",
+        extent=[0, STRICT_NFFT // 2, 1, STRICT_BLOCK_FRAMES],
+        cmap="magma",
+    )
+    ax.set_title("Best-matching 4-frame block")
+    ax.set_xlabel("FFT bin")
+    ax.set_ylabel("Frame in block")
+    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+
+    ax = axes[2]
+    colors = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728"]
+    for j, lab in enumerate(bank["labels"]):
+        ax.plot(start_times, score_traces[:, j], linewidth=2.0 if lab == label else 1.3, color=colors[j], label=f"/{lab}/")
+    ax.axvline(start_times[best_idx], color="#111111", linestyle="--", linewidth=1.2)
+    ax.scatter([start_times[best_idx]], [score_traces[best_idx, label_idx]], color="#111111", zorder=5)
+    ax.set_title("Sliding normalized correlation by candidate block")
+    ax.set_xlabel("Block start time (s)")
+    ax.set_ylabel("Correlation score")
+    ax.legend(ncol=4, frameon=False)
+    ax.grid(alpha=0.25)
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=220)
+    plt.close(fig)
+
+
 def train_cnn(
     X_train: np.ndarray,
     y_train: np.ndarray,
@@ -865,6 +1083,13 @@ def main() -> int:
     Y_tr, Y_dev, Y_te = Y[train_idx], Y[dev_idx], Y[test_idx]
     exclusive_decode = bool(np.all(Y.sum(axis=1) == 1))
 
+    case_dir = Path(__file__).resolve().parents[1] / "cases"
+    strict_bank = build_strict_course_bank(case_dir, args.labels)
+    strict_dev_scores = score_strict_course_detector(data["paths"][dev_idx], strict_bank)
+    strict_thresholds = fit_thresholds(Y_dev, strict_dev_scores)
+    strict_te_scores = score_strict_course_detector(data["paths"][test_idx], strict_bank)
+    strict_te_pred = predict_with_thresholds(strict_te_scores, strict_thresholds, exclusive=exclusive_decode)
+
     patch_pos_templates, patch_neg_templates, autocorr_pos_templates, autocorr_neg_templates = fit_course_detector(X_course_tr, Y_tr)
     course_dev_scores = score_course_detector(
         X_course_dev,
@@ -884,16 +1109,22 @@ def main() -> int:
     course_te_pred = predict_with_thresholds(course_te_scores, course_thresholds, exclusive=exclusive_decode)
 
     method_preds = {
+        "strict_course_fft": strict_te_pred,
         "course_filterbank_corr": course_te_pred,
     }
     method_scores = {
+        "strict_course_fft": strict_te_scores,
         "course_filterbank_corr": course_te_scores,
     }
     threshold_table = {
         "label": list(args.labels),
+        "strict_course_threshold": strict_thresholds,
         "course_threshold": course_thresholds,
     }
-    method_desc_parts = ["course local-window contrastive template + autocorrelation detector"]
+    method_desc_parts = [
+        "strict course FFT template detector",
+        "course local-window contrastive template + autocorrelation detector",
+    ]
     cnn_summary = None
 
     if not args.course_only:
@@ -984,6 +1215,14 @@ def main() -> int:
         "dev_files": int(len(dev_idx)),
         "test_files": int(len(test_idx)),
         "positive_counts_test": {lab: int(Y_te[:, j].sum()) for j, lab in enumerate(args.labels)},
+        "strict_course_detector": {
+            "frame_ms": STRICT_FRAME_MS,
+            "hop_ms": STRICT_HOP_MS,
+            "block_frames": STRICT_BLOCK_FRAMES,
+            "nfft": STRICT_NFFT,
+            "template_words": strict_bank["template_words"],
+            "template_paths": strict_bank["template_paths"],
+        },
         "course_detector": {
             "n_mels": FILTERBANK_MELS,
             "autocorr_lags": COURSE_AUTOCORR_LAGS,
@@ -1006,6 +1245,19 @@ def main() -> int:
     metrics_df.to_csv(args.out_dir / "per_label_metrics.csv", index=False)
     example_df.to_csv(args.out_dir / "example_predictions.csv", index=False)
     pd.DataFrame(threshold_table).to_csv(args.out_dir / "thresholds.csv", index=False)
+    strict_bank_json = {
+        "labels": strict_bank["labels"],
+        "template_paths": strict_bank["template_paths"],
+        "template_words": strict_bank["template_words"],
+        "template_start_frames": strict_bank["template_start_frames"].astype(int).tolist(),
+        "templates": strict_bank["templates"].astype(float).tolist(),
+        "freq_hz": strict_bank["freq_hz"].astype(float).tolist(),
+        "cfg": strict_bank["cfg"],
+    }
+    (args.out_dir / "strict_course_template_bank.json").write_text(
+        json.dumps(strict_bank_json, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
     export_course_template_bank(
         args.out_dir / "course_template_bank.json",
         args.labels,
@@ -1049,9 +1301,18 @@ def main() -> int:
     )
 
     plot_letter_examples(data, args.labels, DEFAULT_EXAMPLE_WORDS, args.fig_dir / "letter_examples.png")
+    plot_strict_template_construction(strict_bank, args.fig_dir / "strict_course_template_construction.png")
+    demo_idx = build_example_rows(data, args.labels, DEFAULT_EXAMPLE_WORDS)[0]
+    plot_strict_correlation_demo(
+        Path(data["paths"][demo_idx]),
+        strict_bank,
+        args.labels[0],
+        args.fig_dir / "strict_course_correlation_demo.png",
+    )
     plot_template_grid(data["X_cnn"][train_idx], Y_tr, args.labels, args.fig_dir / "template_grid.png")
     plot_metrics(summary_df, args.fig_dir / "metric_summary.png")
     plot_per_label_f1(metrics_df, args.fig_dir / "per_label_f1.png")
+    plot_score_distribution(strict_te_scores, Y_te, args.labels, args.fig_dir / "strict_course")
     plot_score_distribution(course_te_scores, Y_te, args.labels, args.fig_dir)
 
     print(json.dumps(summary, ensure_ascii=False, indent=2))
