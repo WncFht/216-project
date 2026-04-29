@@ -1,8 +1,8 @@
 \section{理论推导与两种模板方法}
 
-\subsection{我们的方案：短时 FFT 模板}
+\subsection{短时 FFT 模板方法}
 
-我们的方案以短时 FFT 模板为核心。它的模型假设很直接：词首浊辅音的信息集中在词首附近的一个短时片段里，不同类别在局部幅度谱形状上存在可区分的原型。录音音量、说话人和词尾元音会引入变化，因此方法只比较归一化后的局部谱形，不直接依赖整词能量。
+短时 FFT 模板方法以短时 FFT 模板为核心。它的模型假设很直接：词首浊辅音的信息集中在词首附近的一个短时片段里，不同类别在局部幅度谱形状上存在可区分的原型。录音音量、说话人和词尾元音会引入变化，因此方法只比较归一化后的局部谱形，不直接依赖整词能量。
 
 设第 $i$ 个样本的波形为 $x_i[n]$，帧长 $L=20$ ms，帧移 $H=10$ ms，FFT 点数 $N=512$。第 $m$ 帧的频谱写成
 \[
@@ -35,12 +35,12 @@ s_{i,c}=\max_r\rho_{i,c}^{(r)}.
 \]
 单标签四分类下，预测类别就是 $\arg\max_c s_{i,c}$。这条链路的伪代码放在附录算法~\ref{alg:strict-course}。
 
-图~\ref{fig:strict-template} 展示了我们的方案使用的模板构造结果。左边是与类别均值最接近的代表性训练样本块，右边是对应标签的归一化均值模板曲线。
+图~\ref{fig:strict-template} 展示了短时 FFT 模板方法的模板构造结果。左边是与类别均值最接近的代表性训练样本块，右边是对应标签的归一化均值模板曲线。
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.95\textwidth]{figures/mswc_course_gbdz_75w_cap40_5_5/strict_course_template_construction.png}
-    \caption{我们的方案的模板构造：先取最大能量块，再对同类训练集与验证集样本求均值模板。}
+    \caption{短时 FFT 模板方法的模板构造：先取最大能量块，再对同类训练集与验证集样本求均值模板。}
     \label{fig:strict-template}
 \end{figure}
 
@@ -49,13 +49,13 @@ s_{i,c}=\max_r\rho_{i,c}^{(r)}.
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.95\textwidth]{figures/mswc_course_gbdz_75w_cap40_5_5/strict_course_correlation_demo.png}
-    \caption{我们的方案的互相关搜索：先扫候选块，再取每个标签的最大相关分数。}
+    \caption{短时 FFT 模板方法的互相关搜索：先扫候选块，再取每个标签的最大相关分数。}
     \label{fig:strict-corr}
 \end{figure}
 
-\subsection{AI 重做版：基于 filterbank 的局部模板与自相关}
+\subsection{基于 AI 的重实现方法：基于 filterbank 的局部模板与自相关}
 
-AI 重做版仍然采用模板匹配思路，但加入了三项改进：用 mel filterbank 降维，用能量变化定位词首局部窗，并为每个标签同时建立正模板和负模板。它的模型假设是：真正有用的证据主要集中在词首附近；某个标签不仅要像自己的正样本，也要不像其他三个标签；/z/ 这类持续摩擦音和 /g/、/b/、/d/ 这类短促爆破音，在局部能量包络的自相关上也有差别。
+基于 AI 的重实现方法仍然采用模板匹配思路，但加入了三项改进：用 mel filterbank 降维，用能量变化定位词首局部窗，并为每个标签同时建立正模板和负模板。它的模型假设是：真正有用的证据主要集中在词首附近；某个标签不仅要像自己的正样本，也要不像其他三个标签；/z/ 这类持续摩擦音和 /g/、/b/、/d/ 这类短促爆破音，在局部能量包络的自相关上也有差别。
 
 先用 $25$ ms 帧长、$10$ ms 帧移计算功率谱，再经过 $40$ 个 mel 三角滤波器得到 log-mel 帧向量
 \[
@@ -66,7 +66,7 @@ L_i[m,q]=\log\left(\sum_k |X_{i,m}[k]|^2 B_q[k]+\epsilon\right),
 \[
 e_i[m]=\log\left(\frac{1}{40}\sum_q \exp L_i[m,q]+\epsilon\right).
 \]
-代码先对 $e_i[m]$ 做 5 帧滑动平均，再用开头若干帧的中位数作基线。第一个超过基线加 $0.22$ 的位置作为词首起点估计 $o_i$。候选窗长度为 16 帧，包含起点前 2 帧，并额外考察 $\Delta\in\{-2,0,2\}$ 三个偏移：
+先对 $e_i[m]$ 做 5 帧滑动平均，再用开头若干帧的中位数作基线。第一个超过基线加 $0.22$ 的位置作为词首起点估计 $o_i$。候选窗长度为 16 帧，包含起点前 2 帧，并额外考察 $\Delta\in\{-2,0,2\}$ 三个偏移：
 \[
 W_i^{(\Delta)}=
 L_i[o_i-2+\Delta: o_i-2+\Delta+15,:].
@@ -95,30 +95,30 @@ s_{i,c}=&\;\max_{\Delta\in\{-2,0,2\}}g_{i,c}^{(\Delta)}.
 \end{aligned}
 \]
 
-这条分数式比我们的方案多了负模板差分、自相关项和更明确的词首定位，因此在拓展实验中承担了“用 AI 重做频谱描述与检测”的主体角色。它仍保留可解释的谱模板结构，但频谱表示和检测规则更复杂。伪代码见附录算法~\ref{alg:course-filterbank}。
+这条分数式比短时 FFT 模板方法多了负模板差分、自相关项和更明确的词首定位，因此对应本文的基于 AI 的重实现方法。它仍保留可解释的谱模板结构，但频谱表示和检测规则更复杂。伪代码见附录算法~\ref{alg:course-filterbank}。
 
-图~\ref{fig:course-template-contrast} 展示了 AI 重做版中真正参与判别的正负差分。前两列分别是原始 log-mel 段均值和以词首估计位置为中心的段均值的正负模板差，第三列是能量包络自相关的正负模板差。
+图~\ref{fig:course-template-contrast} 展示了基于 AI 的重实现方法中真正参与判别的正负差分。前两列分别是原始 log-mel 段均值和以词首估计位置为中心的段均值的正负模板差，第三列是能量包络自相关的正负模板差。
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.98\textwidth]{figures/mswc_course_gbdz_75w_cap40_5_5/course_filterbank_template_contrast.png}
-    \caption{AI 重做版的正负模板差分。颜色越偏暖，说明该区域更接近该类正样本；颜色越偏冷，说明它更像负样本。}
+    \caption{基于 AI 的重实现方法的正负模板差分。颜色越偏暖，说明该区域更接近该类正样本；颜色越偏冷，说明它更像负样本。}
     \label{fig:course-template-contrast}
 \end{figure}
 
-图~\ref{fig:course-localization} 把 AI 重做版的一次检测拆开看：先由 log-mel 能量估计词首起点，再围绕该位置取三个候选窗，最后对每个标签和偏移计算正负模板差分加自相关分数。
+图~\ref{fig:course-localization} 把基于 AI 的重实现方法的一次检测拆开看：先由 log-mel 能量估计词首起点，再围绕该位置取三个候选窗，最后对每个标签和偏移计算正负模板差分加自相关分数。
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.95\textwidth]{figures/mswc_course_gbdz_75w_cap40_5_5/course_filterbank_localization_demo.png}
-    \caption{AI 重做版的局部定位与候选偏移打分示例。}
+    \caption{基于 AI 的重实现方法的局部定位与候选偏移打分示例。}
     \label{fig:course-localization}
 \end{figure}
 
 \subsection{MATLAB 演示}
 
-为与课程中的频谱分析工具保持一致，我们还实现了对应的 MATLAB 演示。核心打分公式仍为
+为与课程中的频谱分析工具保持一致，我们还实现了对应的 MATLAB 演示。若将单边幅度谱向量记为 $m$，模板向量记为 $t$，则其相关得分写成
 \[
-\texttt{score}=\frac{\texttt{mag}^\top \texttt{template}}{\|\texttt{mag}\|_2\|\texttt{template}\|_2}.
+\sigma=\frac{m^\top t}{\|m\|_2\|t\|_2}.
 \]
 该演示用于展示四个代表样本的短时频谱模板和相关得分矩阵，便于直接观察模板与语音之间的对应关系。正式评测则在统一的数据划分下完成块长选择，并用训练集与验证集样本重新估计最终模板。

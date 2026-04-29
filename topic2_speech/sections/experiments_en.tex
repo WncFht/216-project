@@ -1,8 +1,8 @@
 \section{Experimental Results and Comparison}
 
-\subsection{Our method}
+\subsection{Short-time FFT template method}
 
-We first examine our short-time FFT template method. Since the task is single-label four-class classification, exact-match accuracy is the most direct metric, while label-wise accuracy is only a supplementary reference.
+We first examine the short-time FFT template method. Since the task is single-label four-class classification, exact-match accuracy is the most direct metric, while label-wise accuracy is only a supplementary reference.
 
 This method no longer uses only four representative case recordings as templates. It first averages the maximum-energy blocks of same-class samples in the training set and then re-estimates the final templates from the training and development sets after the block length is selected. The block length is chosen from 3 to 6 frames on the development set, and the selected value is 5. Because the data cover 300 words, cross-word and speaker variation are large, so FFT magnitude correlation alone cannot fully separate the four initial consonants. Even so, the method keeps a clear spectral interpretation.
 
@@ -14,7 +14,7 @@ This method no longer uses only four representative case recordings as templates
         \toprule
         Method & Label acc. & Exact match & Macro-F1 & Micro-F1 & Samples-F1 \\
         \midrule
-        Our method & 0.6327 & 0.2655 & 0.2439 & 0.2655 & 0.2655 \\
+        Short-time FFT template & 0.6327 & 0.2655 & 0.2439 & 0.2655 & 0.2655 \\
         \bottomrule
     \end{tabular}
 \end{table}
@@ -27,7 +27,7 @@ This method no longer uses only four representative case recordings as templates
         \toprule
         Method & /g/ & /b/ & /d/ & /z/ \\
         \midrule
-        Our method & 0.217 & 0.163 & 0.243 & 0.353 \\
+        Short-time FFT template & 0.217 & 0.163 & 0.243 & 0.353 \\
         \bottomrule
     \end{tabular}
 \end{table}
@@ -58,61 +58,61 @@ Figure~\ref{fig:strict-score-dist} gives the score distributions for the four cl
         \includegraphics[width=\linewidth]{figures/mswc_course_gbdz_75w_cap40_5_5/strict_course/score_distribution_z.png}
         \small /z/
     \end{minipage}
-    \caption{Score distributions of our method on the four classes.}
+    \caption{Score distributions of the short-time FFT template method on the four classes.}
     \label{fig:strict-score-dist}
 \end{figure}
 
-\subsection{AI reimplementation comparison}
+\subsection{AI-assisted reimplementation comparison}
 
-Beyond our method, the report also includes an AI reimplementation. It does not simply replace the classifier. It redoes the first two stages of the pipeline: it first uses log-mel features and energy change to obtain a more stable local spectrum near the word onset, and then uses positive-negative template differences and autocorrelation for detection.
+Beyond the short-time FFT template method, the report also includes an AI-assisted reimplementation method. It does not simply replace the classifier. It redoes the first two stages of the pipeline: it first uses log-mel features and energy change to obtain a more stable local spectrum near the word onset, and then uses positive-negative template differences and autocorrelation for detection.
 
 \begin{table}[H]
     \centering
     \small
     \setlength{\tabcolsep}{4pt}
-    \caption{Overall comparison between our method and the AI reimplementation.}
+    \caption{Overall comparison between the short-time FFT template method and the AI-assisted reimplementation method.}
     \label{tab:course-compare}
     \begin{tabular}{lccccc}
         \toprule
         Method & Label acc. & Exact match & Macro-F1 & Micro-F1 & Samples-F1 \\
         \midrule
-        Our method & 0.6327 & 0.2655 & 0.2439 & 0.2655 & 0.2655 \\
-        AI reimplementation & 0.7513 & 0.5026 & 0.4974 & 0.5026 & 0.5026 \\
+        Short-time FFT template & 0.6327 & 0.2655 & 0.2439 & 0.2655 & 0.2655 \\
+        AI-assisted reimplementation & 0.7513 & 0.5026 & 0.4974 & 0.5026 & 0.5026 \\
         \bottomrule
     \end{tabular}
 \end{table}
 
 \begin{table}[H]
     \centering
-    \caption{Per-class F1 of our method and the AI reimplementation.}
+    \caption{Per-class F1 of the short-time FFT template method and the AI-assisted reimplementation method.}
     \label{tab:course-per-label}
     \begin{tabular}{lcccc}
         \toprule
         Method & /g/ & /b/ & /d/ & /z/ \\
         \midrule
-        Our method & 0.217 & 0.163 & 0.243 & 0.353 \\
-        AI reimplementation & 0.464 & 0.359 & 0.429 & 0.737 \\
+        Short-time FFT template & 0.217 & 0.163 & 0.243 & 0.353 \\
+        AI-assisted reimplementation & 0.464 & 0.359 & 0.429 & 0.737 \\
         \bottomrule
     \end{tabular}
 \end{table}
 
-The gain of the AI reimplementation mainly comes from two changes. It narrows the search range more precisely to the region near the word onset, and it adds explicit positive-negative template contrast inside the local window. The largest gain appears on /z/, which suggests that sustained frication is more stable under local log-mel templates and autocorrelation. The overlap between /b/ and /d/ remains strong, which means that short stop releases and alignment error still weaken the template evidence.
+The gain of the AI-assisted reimplementation method mainly comes from two changes. It narrows the search range more precisely to the region near the word onset, and it adds explicit positive-negative template contrast inside the local window. The largest gain appears on /z/, which suggests that sustained frication is more stable under local log-mel templates and autocorrelation. The overlap between /b/ and /d/ remains strong, which means that short stop releases and alignment error still weaken the template evidence.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.95\textwidth]{figures/mswc_course_gbdz_75w_cap40_5_5/letter_examples.png}
-    \caption{Four representative samples used in the AI reimplementation.}
+    \caption{Four representative samples used in the AI-assisted reimplementation method.}
     \label{fig:ext-examples}
 \end{figure}
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.90\textwidth]{figures/mswc_course_gbdz_75w_cap40_5_5/template_grid.png}
-    \caption{Average log-mel template view used for the AI reimplementation. The figure shows the mean spectrogram of each class. It is not identical to the positive-negative contrast templates, but it helps display the energy pattern near the word onset.}
+    \caption{Average log-mel template view used for the AI-assisted reimplementation method. The figure shows the mean spectrogram of each class. It is not identical to the positive-negative contrast templates, but it helps display the energy pattern near the word onset.}
     \label{fig:ext-template-grid}
 \end{figure}
 
-Figure~\ref{fig:course-score-dist} gives the test score distributions of the AI reimplementation for each class. Compared with our method, /z/ shows the clearest separation between positive and negative samples. The classes /g/, /b/, and /d/ still overlap strongly, which explains why the AI reimplementation improves the results but does not remove confusion among stop consonants.
+Figure~\ref{fig:course-score-dist} gives the test score distributions of the AI-assisted reimplementation method for each class. Compared with the short-time FFT template method, /z/ shows the clearest separation between positive and negative samples. The classes /g/, /b/, and /d/ still overlap strongly, which explains why the AI-assisted reimplementation method improves the results but does not remove confusion among stop consonants.
 
 \begin{figure}[H]
     \centering
@@ -138,6 +138,6 @@ Figure~\ref{fig:course-score-dist} gives the test score distributions of the AI 
         \includegraphics[width=\linewidth]{figures/mswc_course_gbdz_75w_cap40_5_5/course_filterbank_corr/score_distribution_z.png}
         \small /z/
     \end{minipage}
-    \caption{Score distributions of the AI reimplementation on the four classes.}
+    \caption{Score distributions of the AI-assisted reimplementation method on the four classes.}
     \label{fig:course-score-dist}
 \end{figure}

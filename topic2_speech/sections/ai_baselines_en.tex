@@ -1,6 +1,6 @@
 \section{Neural Baselines and Training Curves}
 
-After presenting our method and the AI reimplementation, this section adds the MLP and CNN as neural baselines. Both models use the same data split: the training set is used for parameter learning, the development set is used for threshold selection or early stopping, and the test set is used only for the final evaluation. The final prediction is obtained by $\arg\max$ over the four output scores.
+After presenting the short-time FFT template method and the AI-assisted reimplementation method, this section adds the MLP and CNN as neural baselines. Both models use the same data split: the training set is used for parameter learning, the development set is used for threshold selection or early stopping, and the test set is used only for the final evaluation. The final prediction is obtained by $\arg\max$ over the four output scores.
 
 \subsection{MLP: MFCC and band-energy statistics}
 
@@ -68,7 +68,7 @@ The CNN differs from the template methods because it does not define a fixed ons
     \end{tabular}
 \end{table}
 
-The MLP is a stable statistical baseline, but it still falls below the AI reimplementation. The CNN benefits from the larger number of word types and training samples, and its exact-match accuracy reaches 0.559, which is higher than the 0.503 of the AI reimplementation. This result shows that once lexical coverage increases, an end-to-end spectrogram model begins to learn some local patterns near the word onset, although it remains weaker than template methods in interpretability.
+The MLP is a stable statistical baseline, but it still falls below the AI-assisted reimplementation method. The CNN benefits from the larger number of word types and training samples, and its exact-match accuracy reaches 0.559, which is higher than the 0.503 of the AI-assisted reimplementation method. This result shows that once lexical coverage increases, an end-to-end spectrogram model begins to learn some local patterns near the word onset, although it remains weaker than template methods in interpretability.
 
 \begin{table}[H]
     \centering

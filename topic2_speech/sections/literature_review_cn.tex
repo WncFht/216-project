@@ -14,6 +14,6 @@ Rabiner 对 HMM 的综述则把这种帧级表示和序列建模连了起来\cit
 
 因此，本文的主方法没有一开始就采用复杂模型，而是先回到最直接的信号处理工具链：短时 FFT、局部频谱和归一化相关。这样做的目的不是追求更高分数，而是先把问题本身说明白。
 
-\subsection{为什么先介绍我们的方案}
+\subsection{为什么先介绍短时 FFT 模板方法}
 
-在 keyword spotting 研究中，常见的学习型路线包括小型 DNN/CNN\cite{chen2014kws,sainath2015}、Speech Commands 式有限词表评测\cite{warden2018}、Transformer 与自监督语音表征\cite{berg2021,baevski2020,hsu2021hubert,chen2022wavlm,gao2023}，以及流式开放词表检测\cite{kim2025}。本文先介绍我们的方案，再给出 AI 重做版，并在后文补充 MLP 与 CNN 的神经网络对照。这样的安排更便于先说明词首频谱线索本身，再比较更强模型带来的增益。
+在 keyword spotting 研究中，常见的学习型路线包括小型 DNN/CNN\cite{chen2014kws,sainath2015}、Speech Commands 式有限词表评测\cite{warden2018}、Transformer 与自监督语音表征\cite{berg2021,baevski2020,hsu2021hubert,chen2022wavlm,gao2023}，以及流式开放词表检测\cite{kim2025}。本文先介绍短时 FFT 模板方法，再给出基于 AI 的重实现方法，并在后文补充 MLP 与 CNN 的神经网络对照。这样的安排更便于先说明词首频谱线索本身，再比较更强模型带来的增益。

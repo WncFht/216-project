@@ -2,7 +2,7 @@
 
 \subsection{Spectral templates of four representative words}
 
-Figure~\ref{fig:matlab-spectra} shows the short-time FFT templates of four representative words in the MATLAB demonstration. The figure is not a training summary. Its purpose is to show the actual shape of the local templates.
+Figure~\ref{fig:matlab-spectra} shows the short-time FFT templates of four representative words in the MATLAB demonstration. Its purpose is to show the actual shape of the local templates.
 
 \begin{figure}[H]
     \centering
@@ -11,11 +11,11 @@ Figure~\ref{fig:matlab-spectra} shows the short-time FFT templates of four repre
     \label{fig:matlab-spectra}
 \end{figure}
 
-The figure shows a clear contrast. The high-frequency frication of /z/ lasts longer, the initial releases of /b/ and /d/ are shorter, and the short-time structure of /g/ is the easiest to blur when alignment shifts in time. This pattern is consistent with the class templates constructed by our method.
+The figure shows a clear contrast. The high-frequency frication of /z/ lasts longer, the initial releases of /b/ and /d/ are shorter, and the short-time structure of /g/ is the easiest to blur when alignment shifts in time. This pattern is consistent with the class templates constructed by the short-time FFT template method.
 
 \subsection{Correlation score matrix}
 
-Figure~\ref{fig:matlab-score} gives the correlation score matrix produced by the same set of templates on the four representative words. The figure is not meant to prove that the model is strong. It shows that the basic operation of template-query correlation is actually working.
+Figure~\ref{fig:matlab-score} gives the correlation score matrix produced by the same set of templates on the four representative words. It shows how the template set responds to different local speech segments.
 
 \begin{figure}[H]
     \centering
@@ -24,4 +24,4 @@ Figure~\ref{fig:matlab-score} gives the correlation score matrix produced by the
     \label{fig:matlab-score}
 \end{figure}
 
-This matrix is more direct than the waveform alone because it turns the question of which template looks most similar to a local speech segment into a numerical comparison. When the score gap is small, the alignment of the initial consonant is usually not stable enough. This is also the problem that the later AI reimplementation tries to address.
+This matrix is more direct than the waveform alone because it turns the question of which template looks most similar to a local speech segment into a numerical comparison. When the score gap is small, the alignment of the initial consonant is usually not stable enough. This is also the problem that the later AI-assisted reimplementation method tries to address.

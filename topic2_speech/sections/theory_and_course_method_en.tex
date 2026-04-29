@@ -1,8 +1,8 @@
 \section{Theory and Two Template Methods}
 
-\subsection{Our method: short-time FFT templates}
+\subsection{Short-time FFT template method}
 
-Our method corresponds to \texttt{strict\_course\_fft} in the code. Its modeling idea is direct: the useful evidence for the initial voiced consonant lies in a short segment near the word onset, and different classes have different local magnitude-spectrum prototypes. Recording level, speaker identity, and the following vowel all introduce variation, so the method compares normalized local spectral shape rather than whole-word energy.
+The short-time FFT template method has a direct modeling idea: the useful evidence for the initial voiced consonant lies in a short segment near the word onset, and different classes have different local magnitude-spectrum prototypes. Recording level, speaker identity, and the following vowel all introduce variation, so the method compares normalized local spectral shape rather than whole-word energy.
 
 Let $x_i[n]$ be the waveform of sample $i$. The frame length is $L=20$ ms, the hop size is $H=10$ ms, and the FFT size is $N=512$. The spectrum of frame $m$ is
 \[
@@ -35,12 +35,12 @@ s_{i,c}=\max_r\rho_{i,c}^{(r)}.
 \]
 The predicted class is $\arg\max_c s_{i,c}$. The reproducible algorithm is given in Appendix~\ref{alg:strict-course}.
 
-Figure~\ref{fig:strict-template} shows the template construction used by our method. The left side gives representative training blocks near the class mean, and the right side gives the normalized average template for each consonant class.
+Figure~\ref{fig:strict-template} shows the template construction used by the short-time FFT template method. The left side gives representative training blocks near the class mean, and the right side gives the normalized average template for each consonant class.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.95\textwidth]{figures/mswc_course_gbdz_75w_cap40_5_5/strict_course_template_construction.png}
-    \caption{Template construction in our method. The maximum-energy block is extracted first, and the mean template is then computed from same-class samples in the training and development sets.}
+    \caption{Template construction in the short-time FFT template method. The maximum-energy block is extracted first, and the mean template is then computed from same-class samples in the training and development sets.}
     \label{fig:strict-template}
 \end{figure}
 
@@ -49,13 +49,13 @@ Figure~\ref{fig:strict-corr} shows one correlation search. The upper panel is th
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.95\textwidth]{figures/mswc_course_gbdz_75w_cap40_5_5/strict_course_correlation_demo.png}
-    \caption{Correlation search in our method. The classifier scans candidate blocks and keeps the largest correlation score for each class.}
+    \caption{Correlation search in the short-time FFT template method. The classifier scans candidate blocks and keeps the largest correlation score for each class.}
     \label{fig:strict-corr}
 \end{figure}
 
-\subsection{AI reimplementation: filterbank-based local templates and autocorrelation}
+\subsection{AI-assisted reimplementation: filterbank-based local templates and autocorrelation}
 
-The AI reimplementation corresponds to \texttt{course\_filterbank\_corr}. It remains a template method, but it adds three changes: mel filterbanks for spectral compression, energy-based localization of a local onset window, and both positive and negative templates for each class. Its basic idea is that the most useful evidence lies near the word onset, a class should resemble its own positive samples and differ from the other three classes, and the energy-envelope autocorrelation can help separate sustained frication from short stop releases.
+The AI-assisted reimplementation remains a template method, but it adds three changes: mel filterbanks for spectral compression, energy-based localization of a local onset window, and both positive and negative templates for each class. Its basic idea is that the most useful evidence lies near the word onset, a class should resemble its own positive samples and differ from the other three classes, and the energy-envelope autocorrelation can help separate sustained frication from short stop releases.
 
 The method first uses 25 ms frames and 10 ms hops to compute the power spectrum and then applies 40 mel triangular filters to obtain a log-mel vector
 \[
@@ -66,7 +66,7 @@ Frame energy is defined as
 \[
 e_i[m]=\log\left(\frac{1}{40}\sum_q \exp L_i[m,q]+\epsilon\right).
 \]
-The code smooths $e_i[m]$ with a 5-frame moving average and uses the median of the first several frames as the baseline. The onset estimate $o_i$ is the first position whose value exceeds the baseline by 0.22. The candidate window has length 16 frames, starts 2 frames before the onset estimate, and is also evaluated under three offsets $\Delta\in\{-2,0,2\}$:
+The method smooths $e_i[m]$ with a 5-frame moving average and uses the median of the first several frames as the baseline. The onset estimate $o_i$ is the first position whose value exceeds the baseline by 0.22. The candidate window has length 16 frames, starts 2 frames before the onset estimate, and is also evaluated under three offsets $\Delta\in\{-2,0,2\}$:
 \[
 W_i^{(\Delta)}=
 L_i[o_i-2+\Delta: o_i-2+\Delta+15,:].
@@ -95,14 +95,14 @@ s_{i,c}=&\;\max_{\Delta\in\{-2,0,2\}}g_{i,c}^{(\Delta)}.
 \end{aligned}
 \]
 
-Compared with our method, this score adds negative-template contrast, autocorrelation, and a more explicit onset-localization step. In the scope of this report, it serves as the main AI reimplementation of the spectral description and detection stages. It still keeps an interpretable template structure, but the representation and the scoring rule are more complex. The reproducible algorithm is given in Appendix~\ref{alg:course-filterbank}.
+Compared with the short-time FFT template method, this score adds negative-template contrast, autocorrelation, and a more explicit onset-localization step. It represents the AI-assisted reimplementation method used in this report. It still keeps an interpretable template structure, but the representation and the scoring rule are more complex. The reproducible algorithm is given in Appendix~\ref{alg:course-filterbank}.
 
 Figure~\ref{fig:course-template-contrast} shows the positive-negative contrasts that directly enter the classification rule. The first two columns show the template differences for raw log-mel segment means and onset-centered segment means, and the third column shows the positive-negative differences in energy-envelope autocorrelation.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.98\textwidth]{figures/mswc_course_gbdz_75w_cap40_5_5/course_filterbank_template_contrast.png}
-    \caption{Positive-negative template differences in the AI reimplementation. Warmer regions indicate stronger similarity to positive samples, while cooler regions indicate stronger similarity to negative samples.}
+    \caption{Positive-negative template differences in the AI-assisted reimplementation method. Warmer regions indicate stronger similarity to positive samples, while cooler regions indicate stronger similarity to negative samples.}
     \label{fig:course-template-contrast}
 \end{figure}
 
@@ -111,14 +111,14 @@ Figure~\ref{fig:course-localization} breaks one detection case into steps. The m
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.95\textwidth]{figures/mswc_course_gbdz_75w_cap40_5_5/course_filterbank_localization_demo.png}
-    \caption{Local localization and offset scoring in the AI reimplementation.}
+    \caption{Local localization and offset scoring in the AI-assisted reimplementation method.}
     \label{fig:course-localization}
 \end{figure}
 
 \subsection{MATLAB demonstration}
 
-To stay consistent with the spectral analysis tools used in class, we also implement a matching MATLAB demonstration. The core score remains
+To stay consistent with the spectral analysis tools used in class, we also implement a matching MATLAB demonstration. If the one-sided magnitude spectrum is written as $m$ and the template vector is written as $t$, the correlation score is
 \[
-\texttt{score}=\frac{\texttt{mag}^\top \texttt{template}}{\|\texttt{mag}\|_2\|\texttt{template}\|_2}.
+\sigma=\frac{m^\top t}{\|m\|_2\|t\|_2}.
 \]
 The demonstration visualizes the short-time spectral templates and the correlation score matrix for four representative samples, which makes the relation between the templates and the speech signal easy to inspect. The formal evaluation, however, uses the shared data split, block-length selection on the development set, and template re-estimation from the training and development sets.
