@@ -1,6 +1,6 @@
 \section{相关工作与理论背景}
 
-本文关心的不是大词汇量识别，而是短语音里一个目标首辅音是否真的出现。这个问题更接近传统语音处理里的短时分析、局部谱形比较和模板匹配；数据上使用 MSWC 这种面向 keyword spotting 和 spoken term search 的词级语音语料\cite{mazumder2021mswc}。
+本文关心的不是大词汇量识别，而是短语音里一个目标词首辅音是否真的出现。这个问题更接近传统语音处理里的短时分析、局部谱形比较和模板匹配；数据上使用 MSWC 这种面向 keyword spotting 和 spoken term search 的词级语音语料\cite{mazumder2021mswc}。
 
 \subsection{短时分析与频谱表示}
 
@@ -10,10 +10,10 @@ Rabiner 对 HMM 的综述则把这种帧级表示和序列建模连了起来\cit
 
 \subsection{辅音线索为什么更依赖局部谱形}
 
-对 /g/、/b/、/d/、/z/ 这类首辅音来说，最关键的证据往往只出现在很短的一段起始区间。爆破音的释放段短、转移快，摩擦音则在高频段拖得更久；这些差异一旦被整词平均掉，信息就会变少。Wilkinson 和 Russell 在 TIMIT 上做 phone recognition 时，也体现出同一个结论：越接近发音边界的局部线索，越能帮助辅音判别\cite{wilkinson2002}。
+对 /g/、/b/、/d/、/z/ 这类词首辅音来说，最关键的证据往往只出现在很短的一段起始区间。爆破音的释放段短、转移快，摩擦音则在高频段持续更久；这些差异一旦被整词平均掉，信息就会明显减少。Wilkinson 和 Russell 在 TIMIT 上做 phone recognition 时，也体现出同一个结论：越接近发音边界的局部线索，越能帮助辅音判别\cite{wilkinson2002}。
 
-因此，本文的主方法没有先上复杂模型，而是回到课堂里最直接的工具链：短时 FFT、局部频谱、归一化相关。这样做的好处不是“更先进”，而是把问题本身讲清楚。
+因此，本文的主方法没有一开始就采用复杂模型，而是先回到最直接的信号处理工具链：短时 FFT、局部频谱和归一化相关。这样做的目的不是追求更高分数，而是先把问题本身说明白。
 
-\subsection{本文为什么先用课堂方法}
+\subsection{为什么先介绍我们的方案}
 
-keyword spotting 里常见的学习型路线包括小型 DNN/CNN\cite{chen2014kws,sainath2015}、Speech Commands 式有限词表评测\cite{warden2018}、Transformer 与自监督语音表征\cite{berg2021,baevski2020,hsu2021hubert,chen2022wavlm,gao2023}，以及流式开放词表检测\cite{kim2025}。本文仍先用课堂频谱模板定义主线，再用 \texttt{course\_filterbank\_corr} 做 AI 重做对照，并把 MLP/CNN 作为神经网络对照。
+在 keyword spotting 研究中，常见的学习型路线包括小型 DNN/CNN\cite{chen2014kws,sainath2015}、Speech Commands 式有限词表评测\cite{warden2018}、Transformer 与自监督语音表征\cite{berg2021,baevski2020,hsu2021hubert,chen2022wavlm,gao2023}，以及流式开放词表检测\cite{kim2025}。本文先介绍我们的方案，再给出 AI 重做版，并在后文补充 MLP 与 CNN 的神经网络对照。这样的安排更便于先说明词首频谱线索本身，再比较更强模型带来的增益。

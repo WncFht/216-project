@@ -30,14 +30,14 @@
   \AtEndDocument{\end{CJK*}}
 \fi
 
-\title{英语首浊辅音的频谱分析与检测\\\large 基于短时 FFT 模板与 AI 重做方法}
+\title{基于 MSWC English 的英语词首浊辅音检测与频谱分析}
 \date{2026年4月29日}
 
 \begin{document}
 \maketitle
 
 \begin{abstract}
-我们选择 VE216 Project Topic 2 中的语音分析题目，研究英语单词开头浊辅音 /g/、/b/、/d/、/z/ 的频谱特征与自动检测。数据来自 MSWC English，只保留首字母属于 \texttt{g/b/d/z} 且首个非元音音素严格对应 \texttt{G/B/D/Z} 的单词；受 /z/ 类候选词数量限制，最终每类取 75 个词，共 300 个词、6796 条语音。我们先实现基于短时 FFT 幅度谱和归一化相关的检测方案，再用 \texttt{course\_filterbank\_corr} 作为 AI 重做方法，引入 log-mel、onset 定位、正负模板和自相关；最后用 MLP 和 CNN 作为神经网络对照。
+本文选择 VE216 Project Topic 2 的语音分析任务，研究英语词首浊辅音 /g/、/b/、/d/、/z/ 的频谱特征与自动检测。数据来自 MSWC English，只保留首字母属于 \texttt{g/b/d/z} 且首个非元音音素严格对应 \texttt{G/B/D/Z} 的单词。受 /z/ 类候选词数量限制，最终每类选取 75 个词，共 300 个词、6796 条语音。方法上，先给出基于短时 FFT 幅度谱和归一化相关的检测方案，再介绍利用 log-mel 表示、词首定位、正负模板和自相关改进的 AI 重做版，最后以 MLP 和 CNN 作为神经网络对照。
 \end{abstract}
 
 \input{sections/problem_definition_cn.tex}

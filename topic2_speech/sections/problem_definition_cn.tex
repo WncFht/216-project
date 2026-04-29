@@ -4,25 +4,25 @@
 \[
 C=\{g,b,d,z\}, \qquad y_i\in\{0,1\}^{|C|}.
 \]
-本实验是单标签四分类任务，每个样本只有一个首浊辅音标签。为了让模板法、MLP 和 CNN 共用同一套评测流程，程序先为每个方法输出分数向量 $s_i\in\mathbb{R}^{|C|}$，再解码成预测标签 $\hat y_i$。由于所有样本都满足 $\sum_c y_{i,c}=1$，正式评测时使用 exclusive decoding，也就是
+本实验是单标签四分类任务，每个样本只有一个词首浊辅音标签。为了让模板法、MLP 和 CNN 共用同一套评测流程，程序先为每个方法输出分数向量 $s_i\in\mathbb{R}^{|C|}$，再解码成预测标签 $\hat y_i$。由于所有样本都满足 $\sum_c y_{i,c}=1$，正式评测时使用独占式解码，也就是
 \[
 \hat c_i=\arg\max_{c\in C}s_{i,c},\qquad
 \hat y_{i,c}=\mathbf{1}[c=\hat c_i].
 \]
-阈值仍然会在 dev 集上估计并导出，主要用于保留一对多接口；测试表里的结果按单标签四分类解码。
+阈值仍然会在验证集上估计并导出，主要用于保留一对多接口；测试表里的结果按单标签四分类解码。
 
-所有方法使用同一份 train/dev/test 划分。train 只用于估计模板或训练模型；dev 只用于选择超参数、阈值和早停；test 只在最后计算指标。本文没有人工切分 phone segment，所以所有方法都必须从整词音频里自己找到词首附近的证据。
+所有方法使用同一份 train/dev/test 划分。训练集只用于估计模板或训练模型；验证集只用于选择超参数、阈值和早停；测试集只在最后计算指标。本文没有人工切分音素片段，因此所有方法都必须从整词音频中自行定位词首附近的证据。
 
 \subsection{本文使用的测试指标}
 
-记测试集大小为 $N$，标签数为 $K=|C|$。label-wise accuracy 按标签位逐一比较：
+记测试集大小为 $N$，标签数为 $K=|C|$。按标签位准确率（label-wise accuracy）按标签位逐一比较：
 \[
 \mathrm{LabelAcc}
 =\frac{1}{NK}\sum_{i=1}^{N}\sum_{c\in C}\mathbf{1}[\hat y_{i,c}=y_{i,c}].
 \]
-它等价于 $1$ 减去 Hamming loss。这个指标会同时奖励真阳性和真阴性，所以在单标签任务里数值会高于 exact-match。
+它等价于 $1$ 减去 Hamming loss。这个指标会同时奖励真阳性和真阴性，所以在单标签任务里数值会高于完全匹配准确率。
 
-exact-match accuracy 要求整条样本的标签向量完全一致：
+完全匹配准确率（exact-match accuracy）要求整条样本的标签向量完全一致：
 \[
 \mathrm{ExactMatch}
 =\frac{1}{N}\sum_{i=1}^{N}\mathbf{1}[\hat y_i=y_i].
@@ -35,23 +35,23 @@ P_c=\frac{TP_c}{TP_c+FP_c},\qquad
 R_c=\frac{TP_c}{TP_c+FN_c},\qquad
 F1_c=\frac{2P_cR_c}{P_c+R_c}.
 \]
-macro-F1 是四个标签 F1 的平均：
+宏平均 F1（macro-F1）是四个标签 F1 的平均：
 \[
 \mathrm{MacroF1}=\frac{1}{K}\sum_{c\in C}F1_c.
 \]
 它不按样本数加权，适合观察 /g/、/b/、/d/、/z/ 是否有某一类被明显牺牲。
 
-micro-F1 先把所有标签位的 $TP$、$FP$、$FN$ 汇总，再计算 F1：
+微平均 F1（micro-F1）先把所有标签位的 $TP$、$FP$、$FN$ 汇总，再计算 F1：
 \[
 \mathrm{MicroF1}
 =\frac{2\sum_c TP_c}{2\sum_c TP_c+\sum_c FP_c+\sum_c FN_c}.
 \]
-samples-F1 则先在每条样本上算 F1，再对样本取平均：
+样本平均 F1（samples-F1）则先在每条样本上算 F1，再对样本取平均：
 \[
 \mathrm{SamplesF1}
 =\frac{1}{N}\sum_{i=1}^{N}
 \frac{2|Y_i\cap \hat Y_i|}{|Y_i|+|\hat Y_i|}.
 \]
-因为本文的真实标签和预测标签都恰好选一个类别，micro-F1、samples-F1 和 exact-match 会给出相同数值。报告仍保留这几个指标，是为了和代码的一对多评测接口一致。
+因为本文的真实标签和预测标签都恰好只选一个类别，micro-F1、samples-F1 和 exact-match 会给出相同数值。报告仍保留这几个指标，是为了和统一评测接口保持一致。
 
-本文比较三类方法。第一类是我们的短时 FFT 模板方案，用分帧、FFT 幅度谱和归一化相关完成检测；第二类是 AI 重做版 \texttt{course\_filterbank\_corr}，用 log-mel 局部窗、正负模板和自相关改进频谱检测；第三类是 MLP 和 CNN，用来观察学习型模型在同一数据集上的表现。
+本文依次比较三类方法。首先介绍我们的方案，即基于短时 FFT 模板的检测方法；随后介绍利用更强频谱表示和局部检测策略的 AI 重做版；最后给出 MLP 和 CNN 两种神经网络对照，以比较不同方法在同一数据集上的表现。
